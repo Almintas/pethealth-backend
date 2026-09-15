@@ -30,6 +30,14 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   MONGODB_URI!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  JWT_SECRET!: string;
+
+  @IsString()
+  @IsOptional()
+  JWT_EXPIRES_IN?: string;
 }
 
 export function validate(

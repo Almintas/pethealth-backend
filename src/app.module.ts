@@ -20,6 +20,7 @@ import { UsersModule } from './users/users.module';
       autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
       sortSchema: true,
       playground: false,
+      context: ({ req }: { req: unknown }) => ({ req }),
     }),
     MongooseModule.forRootAsync({
       inject: [ConfigService],

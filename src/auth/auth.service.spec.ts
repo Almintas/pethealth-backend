@@ -1,9 +1,15 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserRole } from '../users/enums/user-role.enum';
 import { UserModel } from '../users/models/user.model';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
+import { LoginInput } from './dto/login.input';
 import { RegisterInput } from './dto/register.input';
 import { PasswordService } from './password.service';
 
@@ -12,12 +18,17 @@ describe('AuthService', () => {
 
   const usersServiceMock = {
     findByEmail: jest.fn(),
+    findByEmailWithPasswordHash: jest.fn(),
     createUser: jest.fn(),
   };
 
   const passwordServiceMock = {
     hash: jest.fn(),
     compare: jest.fn(),
+  };
+
+  const jwtServiceMock = {
+    sign: jest.fn(),
   };
 
   const registeredUser: UserModel = {
@@ -43,6 +54,10 @@ describe('AuthService', () => {
         {
           provide: PasswordService,
           useValue: passwordServiceMock,
+        },
+        {
+          provide: JwtService,
+          useValue: jwtServiceMock,
         },
       ],
     }).compile();
@@ -109,6 +124,64 @@ describe('AuthService', () => {
           email: 'not-an-email',
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('login', () => {
+    const loginInput: LoginInput = {
+      email: '  Jane@Example.COM ',
+      password: 'password123',
+    };
+
+    it('returns an access token and user for valid credentials', async () => {
+      usersServiceMock.findByEmailWithPasswordHash.mockResolvedValue({
+        user: registeredUser,
+        passwordHash: 'hashed-password',
+      });
+      passwordServiceMock.compare.mockResolvedValue(true);
+      jwtServiceMock.sign.mockReturnValue('signed-jwt');
+
+      const result = await service.login(loginInput);
+
+      expect(usersServiceMock.findByEmailWithPasswordHash).toHaveBeenCalledWith(
+        'jane@example.com',
+      );
+      expect(passwordServiceMock.compare).toHaveBeenCalledWith(
+        'password123',
+        'hashed-password',
+      );
+      expect(jwtServiceMock.sign).toHaveBeenCalledWith({
+        sub: registeredUser.id,
+        role: registeredUser.role,
+      });
+      expect(result).toEqual({
+        accessToken: 'signed-jwt',
+        user: registeredUser,
+      });
+      expect(result.user).not.toHaveProperty('passwordHash');
+    });
+
+    it('rejects unknown emails', async () => {
+      usersServiceMock.findByEmailWithPasswordHash.mockResolvedValue(null);
+
+      await expect(service.login(loginInput)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(passwordServiceMock.compare).not.toHaveBeenCalled();
+      expect(jwtServiceMock.sign).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid passwords', async () => {
+      usersServiceMock.findByEmailWithPasswordHash.mockResolvedValue({
+        user: registeredUser,
+        passwordHash: 'hashed-password',
+      });
+      passwordServiceMock.compare.mockResolvedValue(false);
+
+      await expect(service.login(loginInput)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(jwtServiceMock.sign).not.toHaveBeenCalled();
     });
   });
 });

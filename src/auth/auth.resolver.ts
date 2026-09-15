@@ -1,7 +1,12 @@
-import { Args, Mutation, Resolver } from '@nestjs/graphql';
+import { UseGuards } from '@nestjs/common';
+import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { UserModel } from '../users/models/user.model';
-import { AuthService } from './auth.service';
+import { CurrentUser } from './decorators/current-user.decorator';
+import { LoginInput } from './dto/login.input';
 import { RegisterInput } from './dto/register.input';
+import { GqlAuthGuard } from './guards/gql-auth.guard';
+import { AuthPayload } from './models/auth-payload.model';
+import { AuthService } from './auth.service';
 
 @Resolver()
 export class AuthResolver {
@@ -13,5 +18,22 @@ export class AuthResolver {
   })
   register(@Args('input') input: RegisterInput): Promise<UserModel> {
     return this.authService.register(input);
+  }
+
+  @Mutation(() => AuthPayload, {
+    name: 'login',
+    description: 'Authenticate with email and password',
+  })
+  login(@Args('input') input: LoginInput): Promise<AuthPayload> {
+    return this.authService.login(input);
+  }
+
+  @Query(() => UserModel, {
+    name: 'me',
+    description: 'Returns the currently authenticated user',
+  })
+  @UseGuards(GqlAuthGuard)
+  me(@CurrentUser() user: UserModel): UserModel {
+    return user;
   }
 }

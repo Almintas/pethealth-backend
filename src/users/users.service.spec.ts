@@ -118,6 +118,42 @@ describe('UsersService', () => {
     });
   });
 
+  describe('findByEmailWithPasswordHash', () => {
+    it('returns the user and password hash when found', async () => {
+      const documentWithHash = {
+        ...mockUserDocument,
+        passwordHash: 'hashed-password',
+      };
+
+      userModelMock.findOne.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(documentWithHash),
+        }),
+      });
+
+      const result =
+        await service.findByEmailWithPasswordHash('JANE@example.com');
+
+      expect(userModelMock.findOne).toHaveBeenCalledWith({
+        email: 'jane@example.com',
+      });
+      expect(result?.passwordHash).toBe('hashed-password');
+      expect(result?.user.email).toBe('jane@example.com');
+    });
+
+    it('returns null when the user does not exist', async () => {
+      userModelMock.findOne.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(null),
+        }),
+      });
+
+      await expect(
+        service.findByEmailWithPasswordHash('missing@example.com'),
+      ).resolves.toBeNull();
+    });
+  });
+
   describe('findById', () => {
     it('returns a user when found', async () => {
       userModelMock.findById.mockReturnValue({

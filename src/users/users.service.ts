@@ -9,6 +9,7 @@ import { Model, isValidObjectId } from 'mongoose';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UserWithPasswordHash } from './interfaces/user-with-password-hash.interface';
 import { UserModel } from './models/user.model';
 import { User, UserDocument } from './schemas/user.schema';
 
@@ -52,6 +53,29 @@ export class UsersService {
       .findOne({ email: normalizedEmail })
       .exec();
     return user ? this.toUserModel(user) : null;
+  }
+
+  async findByEmailWithPasswordHash(
+    email: string,
+  ): Promise<UserWithPasswordHash | null> {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      throw new BadRequestException('Email is required');
+    }
+
+    const user = await this.userModel
+      .findOne({ email: normalizedEmail })
+      .select('+passwordHash')
+      .exec();
+
+    if (!user?.passwordHash) {
+      return null;
+    }
+
+    return {
+      user: this.toUserModel(user),
+      passwordHash: user.passwordHash,
+    };
   }
 
   async findById(id: string): Promise<UserModel | null> {
