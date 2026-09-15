@@ -10,6 +10,7 @@ import { HealthModule } from './health/health.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
 import { PetsModule } from './pets/pets.module';
 import { UsersModule } from './users/users.module';
+import { AppointmentsModule } from './appointments/appointments.module';
 import { MedicationsModule } from './medications/medications.module';
 import { VaccinationsModule } from './vaccinations/vaccinations.module';
 
@@ -39,6 +40,7 @@ import { VaccinationsModule } from './vaccinations/vaccinations.module';
     MedicalRecordsModule,
     VaccinationsModule,
     MedicationsModule,
+    AppointmentsModule,
   ],
 })
 export class AppModule {}
