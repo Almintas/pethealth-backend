@@ -24,6 +24,10 @@ import {
   Appointment,
   AppointmentDocument,
 } from '../appointments/schemas/appointment.schema';
+import {
+  Reminder,
+  ReminderDocument,
+} from '../reminders/schemas/reminder.schema';
 import { ACTIVE_PET_FILTER } from './constants/active-pet-filter';
 import { CreatePetInput } from './dto/create-pet.input';
 import { UpdatePetInput } from './dto/update-pet.input';
@@ -42,6 +46,8 @@ export class PetsService {
     private readonly medicationModel: Model<MedicationDocument>,
     @InjectModel(Appointment.name)
     private readonly appointmentModel: Model<AppointmentDocument>,
+    @InjectModel(Reminder.name)
+    private readonly reminderModel: Model<ReminderDocument>,
   ) {}
 
   async createPet(ownerId: string, input: CreatePetInput): Promise<PetModel> {
@@ -138,6 +144,7 @@ export class PetsService {
       this.vaccinationModel.deleteMany({ petId: petObjectId }).exec(),
       this.medicationModel.deleteMany({ petId: petObjectId }).exec(),
       this.appointmentModel.deleteMany({ petId: petObjectId }).exec(),
+      this.reminderModel.deleteMany({ petId: petObjectId }).exec(),
     ]);
   }
 

@@ -12,6 +12,7 @@ import { PetsModule } from './pets/pets.module';
 import { UsersModule } from './users/users.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { MedicationsModule } from './medications/medications.module';
+import { RemindersModule } from './reminders/reminders.module';
 import { VaccinationsModule } from './vaccinations/vaccinations.module';
 
 @Module({
@@ -41,6 +42,7 @@ import { VaccinationsModule } from './vaccinations/vaccinations.module';
     VaccinationsModule,
     MedicationsModule,
     AppointmentsModule,
+    RemindersModule,
   ],
 })
 export class AppModule {}

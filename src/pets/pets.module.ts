@@ -16,6 +16,7 @@ import {
   Appointment,
   AppointmentSchema,
 } from '../appointments/schemas/appointment.schema';
+import { Reminder, ReminderSchema } from '../reminders/schemas/reminder.schema';
 import { PetOwnershipService } from './pet-ownership.service';
 import { Pet, PetSchema } from './schemas/pet.schema';
 import { PetsResolver } from './pets.resolver';
@@ -29,6 +30,7 @@ import { PetsService } from './pets.service';
       { name: Vaccination.name, schema: VaccinationSchema },
       { name: Medication.name, schema: MedicationSchema },
       { name: Appointment.name, schema: AppointmentSchema },
+      { name: Reminder.name, schema: ReminderSchema },
     ]),
   ],
   providers: [PetsService, PetOwnershipService, PetsResolver],

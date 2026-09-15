@@ -3,6 +3,7 @@ import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
 import { Appointment } from '../appointments/schemas/appointment.schema';
+import { Reminder } from '../reminders/schemas/reminder.schema';
 import { MedicalRecord } from '../medical-records/schemas/medical-record.schema';
 import { Medication } from '../medications/schemas/medication.schema';
 import { Vaccination } from '../vaccinations/schemas/vaccination.schema';
@@ -71,6 +72,10 @@ describe('PetsService', () => {
         },
         {
           provide: getModelToken(Appointment.name),
+          useValue: relatedModelMock,
+        },
+        {
+          provide: getModelToken(Reminder.name),
           useValue: relatedModelMock,
         },
       ],
@@ -211,7 +216,7 @@ describe('PetsService', () => {
 
       await expect(service.deletePet(ownerId, petId)).resolves.toBe(true);
 
-      expect(relatedModelMock.deleteMany).toHaveBeenCalledTimes(4);
+      expect(relatedModelMock.deleteMany).toHaveBeenCalledTimes(5);
       expect(ownedPet.save).toHaveBeenCalled();
       expect(ownedPet.deletedAt).toBeInstanceOf(Date);
       expect(ownedPet.deleteOne).not.toHaveBeenCalled();
