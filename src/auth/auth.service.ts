@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -18,6 +19,8 @@ import { PasswordService } from './password.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly passwordService: PasswordService,
@@ -50,6 +53,7 @@ export class AuthService {
     );
 
     if (!authRecord) {
+      this.logger.warn('Failed login attempt (user not found)');
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -59,6 +63,7 @@ export class AuthService {
     );
 
     if (!passwordMatches) {
+      this.logger.warn('Failed login attempt (invalid password)');
       throw new UnauthorizedException('Invalid credentials');
     }
 
