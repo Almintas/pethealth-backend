@@ -9,6 +9,8 @@ import {
   postGraphql,
   uniqueEmail,
 } from './helpers/graphql-test.helpers';
+import { applyHttpSecurityMiddleware } from '../src/http-security.config';
+import request from 'supertest';
 
 const REGISTER_MUTATION = `
   mutation Register($input: RegisterInput!) {
@@ -118,7 +120,8 @@ describe('PetHealth GraphQL (e2e)', () => {
       imports: [appModule.AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication({ bodyParser: false });
+    applyHttpSecurityMiddleware(app);
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -391,6 +394,39 @@ describe('PetHealth GraphQL (e2e)', () => {
       );
       expect(petStillOwned.body.errors).toBeUndefined();
       expect(petStillOwned.body.data?.pet.name).toBe('Mittens');
+    });
+  });
+
+  describe('HTTP security', () => {
+    it('includes Helmet security headers on GraphQL responses', async () => {
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      const response = await request(httpServer)
+        .post('/graphql')
+        .send({ query: '{ health { status } }' });
+
+      expect(response.status).toBe(200);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['x-frame-options']).toBeDefined();
+    });
+
+    it('rejects JSON bodies larger than the configured limit', async () => {
+      const oversizedPayload = JSON.stringify({
+        query: `# ${'x'.repeat(1024 * 1024 + 512)}`,
+      });
+
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      const response = await request(httpServer)
+        .post('/graphql')
+        .set('Content-Type', 'application/json')
+        .send(oversizedPayload);
+
+      expect(response.status).toBe(413);
+    });
+
+    it('still allows normal GraphQL requests after hardening', async () => {
+      const response = await postGraphql(app, '{ health { status } }');
+      expect(response.body.errors).toBeUndefined();
+      expect(response.body.data).toEqual({ health: { status: 'ok' } });
     });
   });
 });
