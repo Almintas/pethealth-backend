@@ -1,3 +1,4 @@
+import { SkipThrottle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { Query, Resolver } from '@nestjs/graphql';
 import { HealthStatus } from './models/health-status.model';
@@ -6,6 +7,7 @@ import { HealthStatus } from './models/health-status.model';
 export class HealthResolver {
   constructor(private readonly configService: ConfigService) {}
 
+  @SkipThrottle()
   @Query(() => HealthStatus, {
     name: 'health',
     description: 'Returns the current service health status.',
