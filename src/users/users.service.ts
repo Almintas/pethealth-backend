@@ -27,6 +27,9 @@ export class UsersService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         role: dto.role,
+        ...(dto.passwordHash !== undefined && {
+          passwordHash: dto.passwordHash,
+        }),
       });
 
       return this.toUserModel(created);

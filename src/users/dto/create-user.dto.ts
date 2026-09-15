@@ -3,6 +3,7 @@ import {
   IsEmail,
   IsEnum,
   IsNotEmpty,
+  IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator';
@@ -27,4 +28,8 @@ export class CreateUserDto {
 
   @IsEnum(UserRole)
   role: UserRole = UserRole.USER;
+
+  @IsOptional()
+  @IsString()
+  passwordHash?: string;
 }
