@@ -43,7 +43,10 @@ import { VaccinationsModule } from './vaccinations/vaccinations.module';
         introspection: !isProductionEnvironment(
           configService.get<string>('NODE_ENV'),
         ),
-        context: ({ req }: { req: unknown }) => ({ req }),
+        context: ({ req, res }: { req: unknown; res: unknown }) => ({
+          req,
+          res,
+        }),
         formatError: (formattedError) =>
           formatGraphqlError(
             formattedError,

@@ -49,6 +49,7 @@ Ensure all of the following pass on the commit you intend to release:
 - `npm ci`
 - `npm run build`
 - `npm test -- --runInBand`
+- `npm run test:e2e`
 - `npm run lint`
 
 CI runs the same checks automatically on **`dev`**. Re-run or confirm CI is green on the **`dev` → `main`** pull request before merging to production.
