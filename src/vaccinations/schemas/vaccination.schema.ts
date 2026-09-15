@@ -41,3 +41,4 @@ export class Vaccination {
 export const VaccinationSchema = SchemaFactory.createForClass(Vaccination);
 
 VaccinationSchema.index({ petId: 1, administeredAt: -1 });
+VaccinationSchema.index({ nextDueAt: 1 });

@@ -2,6 +2,11 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
+import { Appointment } from '../appointments/schemas/appointment.schema';
+import { MedicalRecord } from '../medical-records/schemas/medical-record.schema';
+import { Medication } from '../medications/schemas/medication.schema';
+import { Vaccination } from '../vaccinations/schemas/vaccination.schema';
+import { ACTIVE_PET_FILTER } from './constants/active-pet-filter';
 import { CreatePetInput } from './dto/create-pet.input';
 import { UpdatePetInput } from './dto/update-pet.input';
 import { Pet } from './schemas/pet.schema';
@@ -26,6 +31,7 @@ describe('PetsService', () => {
     gender: 'male',
     birthDate: new Date('2020-05-01T00:00:00.000Z'),
     microchipNumber: '123456',
+    deletedAt: null,
     createdAt,
     updatedAt,
     save: jest.fn().mockResolvedValue(undefined),
@@ -38,15 +44,34 @@ describe('PetsService', () => {
     findOne: jest.fn(),
   };
 
+  const relatedModelMock = {
+    deleteMany: jest
+      .fn()
+      .mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PetsService,
+        { provide: getModelToken(Pet.name), useValue: petModelMock },
         {
-          provide: getModelToken(Pet.name),
-          useValue: petModelMock,
+          provide: getModelToken(MedicalRecord.name),
+          useValue: relatedModelMock,
+        },
+        {
+          provide: getModelToken(Vaccination.name),
+          useValue: relatedModelMock,
+        },
+        {
+          provide: getModelToken(Medication.name),
+          useValue: relatedModelMock,
+        },
+        {
+          provide: getModelToken(Appointment.name),
+          useValue: relatedModelMock,
         },
       ],
     }).compile();
@@ -79,6 +104,7 @@ describe('PetsService', () => {
         gender: undefined,
         birthDate: undefined,
         microchipNumber: undefined,
+        deletedAt: null,
       });
       expect(result.ownerId).toBe(ownerId);
       expect(result.name).toBe('Buddy');
@@ -95,7 +121,7 @@ describe('PetsService', () => {
   });
 
   describe('findMyPets', () => {
-    it('lists only pets for the given owner', async () => {
+    it('lists only active pets for the given owner', async () => {
       const ownedPet = buildPetDocument(ownerId);
       petModelMock.find.mockReturnValue({
         sort: jest.fn().mockReturnValue({
@@ -107,6 +133,7 @@ describe('PetsService', () => {
 
       expect(petModelMock.find).toHaveBeenCalledWith({
         ownerId: new Types.ObjectId(ownerId),
+        ...ACTIVE_PET_FILTER,
       });
       expect(result).toHaveLength(1);
       expect(result[0]?.ownerId).toBe(ownerId);
@@ -114,7 +141,7 @@ describe('PetsService', () => {
   });
 
   describe('findPetByIdForOwner', () => {
-    it('returns a pet owned by the user', async () => {
+    it('returns an active pet owned by the user', async () => {
       const ownedPet = buildPetDocument(ownerId);
       petModelMock.findOne.mockReturnValue({
         exec: jest.fn().mockResolvedValue(ownedPet),
@@ -125,6 +152,7 @@ describe('PetsService', () => {
       expect(petModelMock.findOne).toHaveBeenCalledWith({
         _id: new Types.ObjectId(petId),
         ownerId: new Types.ObjectId(ownerId),
+        ...ACTIVE_PET_FILTER,
       });
       expect(result.id).toBe(petId);
     });
@@ -175,14 +203,18 @@ describe('PetsService', () => {
   });
 
   describe('deletePet', () => {
-    it('deletes a pet owned by the user', async () => {
+    it('soft deletes the pet and removes related records', async () => {
       const ownedPet = buildPetDocument(ownerId);
       petModelMock.findOne.mockReturnValue({
         exec: jest.fn().mockResolvedValue(ownedPet),
       });
 
       await expect(service.deletePet(ownerId, petId)).resolves.toBe(true);
-      expect(ownedPet.deleteOne).toHaveBeenCalled();
+
+      expect(relatedModelMock.deleteMany).toHaveBeenCalledTimes(4);
+      expect(ownedPet.save).toHaveBeenCalled();
+      expect(ownedPet.deletedAt).toBeInstanceOf(Date);
+      expect(ownedPet.deleteOne).not.toHaveBeenCalled();
     });
 
     it('does not delete another user pet', async () => {

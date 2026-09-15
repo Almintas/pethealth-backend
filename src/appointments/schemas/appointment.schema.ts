@@ -10,10 +10,10 @@ export type AppointmentDocument = HydratedDocument<Appointment>;
   collection: 'appointments',
 })
 export class Appointment {
-  @Prop({ type: Types.ObjectId, ref: Pet.name, required: true, index: true })
+  @Prop({ type: Types.ObjectId, ref: Pet.name, required: true })
   petId!: Types.ObjectId;
 
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   scheduledAt!: Date;
 
   @Prop({ required: true, trim: true })
@@ -47,4 +47,4 @@ export class Appointment {
 export const AppointmentSchema = SchemaFactory.createForClass(Appointment);
 
 AppointmentSchema.index({ petId: 1, scheduledAt: 1 });
-AppointmentSchema.index({ petId: 1, scheduledAt: -1 });
+AppointmentSchema.index({ status: 1, scheduledAt: 1 });

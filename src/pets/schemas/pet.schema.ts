@@ -30,6 +30,9 @@ export class Pet {
   @Prop({ trim: true })
   microchipNumber?: string;
 
+  @Prop({ type: Date, default: null, index: true })
+  deletedAt?: Date | null;
+
   createdAt!: Date;
 
   updatedAt!: Date;
@@ -38,3 +41,4 @@ export class Pet {
 export const PetSchema = SchemaFactory.createForClass(Pet);
 
 PetSchema.index({ ownerId: 1, createdAt: -1 });
+PetSchema.index({ ownerId: 1, deletedAt: 1 });

@@ -8,7 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Model, Types, isValidObjectId } from 'mongoose';
-import { PetsService } from '../pets/pets.service';
+import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateAppointmentInput } from './dto/create-appointment.input';
 import { UpdateAppointmentInput } from './dto/update-appointment.input';
 import { AppointmentStatus } from './enums/appointment-status.enum';
@@ -20,7 +20,7 @@ export class AppointmentsService {
   constructor(
     @InjectModel(Appointment.name)
     private readonly appointmentModel: Model<AppointmentDocument>,
-    private readonly petsService: PetsService,
+    private readonly petOwnershipService: PetOwnershipService,
   ) {}
 
   async createAppointment(
@@ -29,7 +29,11 @@ export class AppointmentsService {
   ): Promise<AppointmentModel> {
     const dto = await this.validateCreateInput(input);
     this.assertValidDate(dto.scheduledAt, 'scheduledAt');
-    await this.ensurePetBelongsToOwner(ownerId, dto.petId, 'Pet not found');
+    await this.petOwnershipService.assertPetBelongsToOwner(
+      ownerId,
+      dto.petId,
+      'Pet not found',
+    );
 
     const status = dto.status ?? AppointmentStatus.SCHEDULED;
 
@@ -55,7 +59,11 @@ export class AppointmentsService {
     ownerId: string,
     petId: string,
   ): Promise<AppointmentModel[]> {
-    await this.ensurePetBelongsToOwner(ownerId, petId, 'Pet not found');
+    await this.petOwnershipService.assertPetBelongsToOwner(
+      ownerId,
+      petId,
+      'Pet not found',
+    );
 
     const appointments = await this.appointmentModel
       .find({ petId: new Types.ObjectId(petId) })
@@ -158,28 +166,13 @@ export class AppointmentsService {
       throw new NotFoundException('Appointment not found');
     }
 
-    await this.ensurePetBelongsToOwner(
+    await this.petOwnershipService.assertPetBelongsToOwner(
       ownerId,
       appointment.petId.toString(),
       'Appointment not found',
     );
 
     return appointment;
-  }
-
-  private async ensurePetBelongsToOwner(
-    ownerId: string,
-    petId: string,
-    notFoundMessage: string,
-  ): Promise<void> {
-    try {
-      await this.petsService.findPetByIdForOwner(ownerId, petId);
-    } catch (error: unknown) {
-      if (error instanceof NotFoundException) {
-        throw new NotFoundException(notFoundMessage);
-      }
-      throw error;
-    }
   }
 
   private assertValidDate(value: Date, fieldName: string): void {

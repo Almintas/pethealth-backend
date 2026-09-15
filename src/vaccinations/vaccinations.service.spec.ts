@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
-import { PetsService } from '../pets/pets.service';
+import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateVaccinationInput } from './dto/create-vaccination.input';
 import { UpdateVaccinationInput } from './dto/update-vaccination.input';
 import { Vaccination } from './schemas/vaccination.schema';
@@ -21,8 +21,8 @@ describe('VaccinationsService', () => {
   const createdAt = new Date('2024-01-01T00:00:00.000Z');
   const updatedAt = new Date('2024-01-02T00:00:00.000Z');
 
-  const petsServiceMock = {
-    findPetByIdForOwner: jest.fn(),
+  const petOwnershipServiceMock = {
+    assertPetBelongsToOwner: jest.fn(),
   };
 
   const vaccinationModelMock = {
@@ -54,8 +54,8 @@ describe('VaccinationsService', () => {
           useValue: vaccinationModelMock,
         },
         {
-          provide: PetsService,
-          useValue: petsServiceMock,
+          provide: PetOwnershipService,
+          useValue: petOwnershipServiceMock,
         },
       ],
     }).compile();
@@ -70,7 +70,9 @@ describe('VaccinationsService', () => {
   describe('createVaccination', () => {
     it('creates a vaccination for the user pet', async () => {
       const document = buildVaccinationDocument(petId);
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
       vaccinationModelMock.create.mockResolvedValue(document);
 
       const input: CreateVaccinationInput = {
@@ -82,10 +84,9 @@ describe('VaccinationsService', () => {
 
       const result = await service.createVaccination(ownerId, input);
 
-      expect(petsServiceMock.findPetByIdForOwner).toHaveBeenCalledWith(
-        ownerId,
-        petId,
-      );
+      expect(
+        petOwnershipServiceMock.assertPetBelongsToOwner,
+      ).toHaveBeenCalledWith(ownerId, petId, 'Pet not found');
       expect(vaccinationModelMock.create).toHaveBeenCalledWith({
         petId: new Types.ObjectId(petId),
         vaccineName: 'Rabies',
@@ -111,7 +112,7 @@ describe('VaccinationsService', () => {
     });
 
     it('treats another user pet as not found', async () => {
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
         new NotFoundException('Pet not found'),
       );
 
@@ -128,7 +129,9 @@ describe('VaccinationsService', () => {
   describe('findVaccinationsForPet', () => {
     it('lists vaccinations for the user pet', async () => {
       const document = buildVaccinationDocument(petId);
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
       vaccinationModelMock.find.mockReturnValue({
         sort: jest.fn().mockReturnValue({
           exec: jest.fn().mockResolvedValue([document]),
@@ -142,7 +145,7 @@ describe('VaccinationsService', () => {
     });
 
     it('prevents listing vaccinations for another user pet', async () => {
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
         new NotFoundException('Pet not found'),
       );
 
@@ -158,7 +161,9 @@ describe('VaccinationsService', () => {
       vaccinationModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       const result = await service.findVaccinationByIdForOwner(
         ownerId,
@@ -173,8 +178,8 @@ describe('VaccinationsService', () => {
       vaccinationModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
-        new NotFoundException('Pet not found'),
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
+        new NotFoundException('Vaccination not found'),
       );
 
       await expect(
@@ -189,7 +194,9 @@ describe('VaccinationsService', () => {
       vaccinationModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       const input: UpdateVaccinationInput = {
         vaccineName: ' Updated Rabies ',
@@ -211,7 +218,9 @@ describe('VaccinationsService', () => {
       vaccinationModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       await expect(
         service.updateVaccination(ownerId, vaccinationId, {
@@ -226,7 +235,9 @@ describe('VaccinationsService', () => {
       vaccinationModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       await expect(
         service.updateVaccination(ownerId, vaccinationId, {
@@ -243,7 +254,9 @@ describe('VaccinationsService', () => {
       vaccinationModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       await expect(
         service.deleteVaccination(ownerId, vaccinationId),
@@ -256,8 +269,8 @@ describe('VaccinationsService', () => {
       vaccinationModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
-        new NotFoundException('Pet not found'),
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
+        new NotFoundException('Vaccination not found'),
       );
 
       await expect(

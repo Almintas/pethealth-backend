@@ -8,7 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Model, Types, isValidObjectId } from 'mongoose';
-import { PetsService } from '../pets/pets.service';
+import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateMedicalRecordInput } from './dto/create-medical-record.input';
 import { UpdateMedicalRecordInput } from './dto/update-medical-record.input';
 import { MedicalRecordModel } from './models/medical-record.model';
@@ -22,7 +22,7 @@ export class MedicalRecordsService {
   constructor(
     @InjectModel(MedicalRecord.name)
     private readonly medicalRecordModel: Model<MedicalRecordDocument>,
-    private readonly petsService: PetsService,
+    private readonly petOwnershipService: PetOwnershipService,
   ) {}
 
   async createMedicalRecord(
@@ -30,7 +30,11 @@ export class MedicalRecordsService {
     input: CreateMedicalRecordInput,
   ): Promise<MedicalRecordModel> {
     const dto = await this.validateCreateInput(input);
-    await this.ensurePetBelongsToOwner(ownerId, dto.petId, 'Pet not found');
+    await this.petOwnershipService.assertPetBelongsToOwner(
+      ownerId,
+      dto.petId,
+      'Pet not found',
+    );
 
     try {
       const created = await this.medicalRecordModel.create({
@@ -55,7 +59,11 @@ export class MedicalRecordsService {
     ownerId: string,
     petId: string,
   ): Promise<MedicalRecordModel[]> {
-    await this.ensurePetBelongsToOwner(ownerId, petId, 'Pet not found');
+    await this.petOwnershipService.assertPetBelongsToOwner(
+      ownerId,
+      petId,
+      'Pet not found',
+    );
 
     const records = await this.medicalRecordModel
       .find({ petId: new Types.ObjectId(petId) })
@@ -147,28 +155,13 @@ export class MedicalRecordsService {
       throw new NotFoundException('Medical record not found');
     }
 
-    await this.ensurePetBelongsToOwner(
+    await this.petOwnershipService.assertPetBelongsToOwner(
       ownerId,
       record.petId.toString(),
       'Medical record not found',
     );
 
     return record;
-  }
-
-  private async ensurePetBelongsToOwner(
-    ownerId: string,
-    petId: string,
-    notFoundMessage: string,
-  ): Promise<void> {
-    try {
-      await this.petsService.findPetByIdForOwner(ownerId, petId);
-    } catch (error: unknown) {
-      if (error instanceof NotFoundException) {
-        throw new NotFoundException(notFoundMessage);
-      }
-      throw error;
-    }
   }
 
   private async validateCreateInput(

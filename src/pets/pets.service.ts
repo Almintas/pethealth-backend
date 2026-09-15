@@ -8,6 +8,23 @@ import { InjectModel } from '@nestjs/mongoose';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Model, Types, isValidObjectId } from 'mongoose';
+import {
+  MedicalRecord,
+  MedicalRecordDocument,
+} from '../medical-records/schemas/medical-record.schema';
+import {
+  Medication,
+  MedicationDocument,
+} from '../medications/schemas/medication.schema';
+import {
+  Vaccination,
+  VaccinationDocument,
+} from '../vaccinations/schemas/vaccination.schema';
+import {
+  Appointment,
+  AppointmentDocument,
+} from '../appointments/schemas/appointment.schema';
+import { ACTIVE_PET_FILTER } from './constants/active-pet-filter';
 import { CreatePetInput } from './dto/create-pet.input';
 import { UpdatePetInput } from './dto/update-pet.input';
 import { PetModel } from './models/pet.model';
@@ -17,6 +34,14 @@ import { Pet, PetDocument } from './schemas/pet.schema';
 export class PetsService {
   constructor(
     @InjectModel(Pet.name) private readonly petModel: Model<PetDocument>,
+    @InjectModel(MedicalRecord.name)
+    private readonly medicalRecordModel: Model<MedicalRecordDocument>,
+    @InjectModel(Vaccination.name)
+    private readonly vaccinationModel: Model<VaccinationDocument>,
+    @InjectModel(Medication.name)
+    private readonly medicationModel: Model<MedicationDocument>,
+    @InjectModel(Appointment.name)
+    private readonly appointmentModel: Model<AppointmentDocument>,
   ) {}
 
   async createPet(ownerId: string, input: CreatePetInput): Promise<PetModel> {
@@ -31,6 +56,7 @@ export class PetsService {
         gender: dto.gender,
         birthDate: dto.birthDate,
         microchipNumber: dto.microchipNumber,
+        deletedAt: null,
       });
 
       return this.toPetModel(created);
@@ -41,7 +67,10 @@ export class PetsService {
 
   async findMyPets(ownerId: string): Promise<PetModel[]> {
     const pets = await this.petModel
-      .find({ ownerId: new Types.ObjectId(ownerId) })
+      .find({
+        ownerId: new Types.ObjectId(ownerId),
+        ...ACTIVE_PET_FILTER,
+      })
       .sort({ createdAt: -1 })
       .exec();
 
@@ -90,8 +119,26 @@ export class PetsService {
 
   async deletePet(ownerId: string, petId: string): Promise<boolean> {
     const pet = await this.findOwnedPetDocument(ownerId, petId);
-    await pet.deleteOne();
-    return true;
+
+    try {
+      await this.deletePetRelatedRecords(pet._id);
+      pet.deletedAt = new Date();
+      await pet.save();
+      return true;
+    } catch {
+      throw new InternalServerErrorException('Failed to delete pet');
+    }
+  }
+
+  private async deletePetRelatedRecords(
+    petObjectId: Types.ObjectId,
+  ): Promise<void> {
+    await Promise.all([
+      this.medicalRecordModel.deleteMany({ petId: petObjectId }).exec(),
+      this.vaccinationModel.deleteMany({ petId: petObjectId }).exec(),
+      this.medicationModel.deleteMany({ petId: petObjectId }).exec(),
+      this.appointmentModel.deleteMany({ petId: petObjectId }).exec(),
+    ]);
   }
 
   private async findOwnedPetDocument(
@@ -106,6 +153,7 @@ export class PetsService {
       .findOne({
         _id: new Types.ObjectId(petId),
         ownerId: new Types.ObjectId(ownerId),
+        ...ACTIVE_PET_FILTER,
       })
       .exec();
 

@@ -50,3 +50,4 @@ export class Medication {
 export const MedicationSchema = SchemaFactory.createForClass(Medication);
 
 MedicationSchema.index({ petId: 1, startDate: -1 });
+MedicationSchema.index({ endDate: 1, isActive: 1 });

@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
-import { PetsService } from '../pets/pets.service';
+import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateMedicalRecordInput } from './dto/create-medical-record.input';
 import { UpdateMedicalRecordInput } from './dto/update-medical-record.input';
 import { MedicalRecordsService } from './medical-records.service';
@@ -20,8 +20,8 @@ describe('MedicalRecordsService', () => {
   const updatedAt = new Date('2024-01-02T00:00:00.000Z');
   const recordDate = new Date('2024-03-15T00:00:00.000Z');
 
-  const petsServiceMock = {
-    findPetByIdForOwner: jest.fn(),
+  const petOwnershipServiceMock = {
+    assertPetBelongsToOwner: jest.fn(),
   };
 
   const medicalRecordModelMock = {
@@ -54,8 +54,8 @@ describe('MedicalRecordsService', () => {
           useValue: medicalRecordModelMock,
         },
         {
-          provide: PetsService,
-          useValue: petsServiceMock,
+          provide: PetOwnershipService,
+          useValue: petOwnershipServiceMock,
         },
       ],
     }).compile();
@@ -70,7 +70,9 @@ describe('MedicalRecordsService', () => {
   describe('createMedicalRecord', () => {
     it('creates a medical record for the user pet', async () => {
       const document = buildRecordDocument(petId);
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
       medicalRecordModelMock.create.mockResolvedValue(document);
 
       const input: CreateMedicalRecordInput = {
@@ -83,10 +85,9 @@ describe('MedicalRecordsService', () => {
 
       const result = await service.createMedicalRecord(ownerId, input);
 
-      expect(petsServiceMock.findPetByIdForOwner).toHaveBeenCalledWith(
-        ownerId,
-        petId,
-      );
+      expect(
+        petOwnershipServiceMock.assertPetBelongsToOwner,
+      ).toHaveBeenCalledWith(ownerId, petId, 'Pet not found');
       expect(medicalRecordModelMock.create).toHaveBeenCalledWith({
         petId: new Types.ObjectId(petId),
         date: recordDate,
@@ -103,7 +104,7 @@ describe('MedicalRecordsService', () => {
     });
 
     it('treats another user pet as not found', async () => {
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
         new NotFoundException('Pet not found'),
       );
 
@@ -132,7 +133,9 @@ describe('MedicalRecordsService', () => {
   describe('findMedicalRecordsForPet', () => {
     it('lists records for the user pet', async () => {
       const document = buildRecordDocument(petId);
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
       medicalRecordModelMock.find.mockReturnValue({
         sort: jest.fn().mockReturnValue({
           exec: jest.fn().mockResolvedValue([document]),
@@ -149,7 +152,7 @@ describe('MedicalRecordsService', () => {
     });
 
     it('prevents listing records for another user pet', async () => {
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
         new NotFoundException('Pet not found'),
       );
 
@@ -165,7 +168,9 @@ describe('MedicalRecordsService', () => {
       medicalRecordModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       const result = await service.findMedicalRecordByIdForOwner(
         ownerId,
@@ -180,8 +185,8 @@ describe('MedicalRecordsService', () => {
       medicalRecordModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
-        new NotFoundException('Pet not found'),
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
+        new NotFoundException('Medical record not found'),
       );
 
       await expect(
@@ -196,7 +201,9 @@ describe('MedicalRecordsService', () => {
       medicalRecordModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       const input: UpdateMedicalRecordInput = {
         title: ' Updated title ',
@@ -218,7 +225,9 @@ describe('MedicalRecordsService', () => {
       medicalRecordModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       await expect(
         service.updateMedicalRecord(ownerId, recordId, {
@@ -241,7 +250,9 @@ describe('MedicalRecordsService', () => {
       medicalRecordModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       await expect(
         service.deleteMedicalRecord(ownerId, recordId),
@@ -254,8 +265,8 @@ describe('MedicalRecordsService', () => {
       medicalRecordModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
-        new NotFoundException('Pet not found'),
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
+        new NotFoundException('Medical record not found'),
       );
 
       await expect(

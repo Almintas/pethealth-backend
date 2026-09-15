@@ -8,7 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Model, Types, isValidObjectId } from 'mongoose';
-import { PetsService } from '../pets/pets.service';
+import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateVaccinationInput } from './dto/create-vaccination.input';
 import { UpdateVaccinationInput } from './dto/update-vaccination.input';
 import { VaccinationModel } from './models/vaccination.model';
@@ -19,7 +19,7 @@ export class VaccinationsService {
   constructor(
     @InjectModel(Vaccination.name)
     private readonly vaccinationModel: Model<VaccinationDocument>,
-    private readonly petsService: PetsService,
+    private readonly petOwnershipService: PetOwnershipService,
   ) {}
 
   async createVaccination(
@@ -28,7 +28,11 @@ export class VaccinationsService {
   ): Promise<VaccinationModel> {
     const dto = await this.validateCreateInput(input);
     this.assertDueDateNotBeforeAdministered(dto.administeredAt, dto.nextDueAt);
-    await this.ensurePetBelongsToOwner(ownerId, dto.petId, 'Pet not found');
+    await this.petOwnershipService.assertPetBelongsToOwner(
+      ownerId,
+      dto.petId,
+      'Pet not found',
+    );
 
     try {
       const created = await this.vaccinationModel.create({
@@ -52,7 +56,11 @@ export class VaccinationsService {
     ownerId: string,
     petId: string,
   ): Promise<VaccinationModel[]> {
-    await this.ensurePetBelongsToOwner(ownerId, petId, 'Pet not found');
+    await this.petOwnershipService.assertPetBelongsToOwner(
+      ownerId,
+      petId,
+      'Pet not found',
+    );
 
     const vaccinations = await this.vaccinationModel
       .find({ petId: new Types.ObjectId(petId) })
@@ -159,28 +167,13 @@ export class VaccinationsService {
       throw new NotFoundException('Vaccination not found');
     }
 
-    await this.ensurePetBelongsToOwner(
+    await this.petOwnershipService.assertPetBelongsToOwner(
       ownerId,
       vaccination.petId.toString(),
       'Vaccination not found',
     );
 
     return vaccination;
-  }
-
-  private async ensurePetBelongsToOwner(
-    ownerId: string,
-    petId: string,
-    notFoundMessage: string,
-  ): Promise<void> {
-    try {
-      await this.petsService.findPetByIdForOwner(ownerId, petId);
-    } catch (error: unknown) {
-      if (error instanceof NotFoundException) {
-        throw new NotFoundException(notFoundMessage);
-      }
-      throw error;
-    }
   }
 
   private assertDueDateNotBeforeAdministered(

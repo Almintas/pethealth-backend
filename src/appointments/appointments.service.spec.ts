@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
-import { PetsService } from '../pets/pets.service';
+import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateAppointmentInput } from './dto/create-appointment.input';
 import { UpdateAppointmentInput } from './dto/update-appointment.input';
 import { AppointmentStatus } from './enums/appointment-status.enum';
@@ -21,8 +21,8 @@ describe('AppointmentsService', () => {
   const createdAt = new Date('2024-01-01T00:00:00.000Z');
   const updatedAt = new Date('2024-01-02T00:00:00.000Z');
 
-  const petsServiceMock = {
-    findPetByIdForOwner: jest.fn(),
+  const petOwnershipServiceMock = {
+    assertPetBelongsToOwner: jest.fn(),
   };
 
   const appointmentModelMock = {
@@ -57,8 +57,8 @@ describe('AppointmentsService', () => {
           useValue: appointmentModelMock,
         },
         {
-          provide: PetsService,
-          useValue: petsServiceMock,
+          provide: PetOwnershipService,
+          useValue: petOwnershipServiceMock,
         },
       ],
     }).compile();
@@ -73,7 +73,9 @@ describe('AppointmentsService', () => {
   describe('createAppointment', () => {
     it('creates an appointment for the user pet with default status', async () => {
       const document = buildAppointmentDocument(petId);
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
       appointmentModelMock.create.mockResolvedValue(document);
 
       const input: CreateAppointmentInput = {
@@ -108,7 +110,7 @@ describe('AppointmentsService', () => {
     });
 
     it('treats another user pet as not found', async () => {
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
         new NotFoundException('Pet not found'),
       );
 
@@ -125,7 +127,9 @@ describe('AppointmentsService', () => {
   describe('findAppointmentsForPet', () => {
     it('lists appointments for the user pet', async () => {
       const document = buildAppointmentDocument(petId);
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
       appointmentModelMock.find.mockReturnValue({
         sort: jest.fn().mockReturnValue({
           exec: jest.fn().mockResolvedValue([document]),
@@ -139,7 +143,7 @@ describe('AppointmentsService', () => {
     });
 
     it('prevents listing appointments for another user pet', async () => {
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
         new NotFoundException('Pet not found'),
       );
 
@@ -155,7 +159,9 @@ describe('AppointmentsService', () => {
       appointmentModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       const result = await service.findAppointmentByIdForOwner(
         ownerId,
@@ -170,8 +176,8 @@ describe('AppointmentsService', () => {
       appointmentModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
-        new NotFoundException('Pet not found'),
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
+        new NotFoundException('Appointment not found'),
       );
 
       await expect(
@@ -186,7 +192,9 @@ describe('AppointmentsService', () => {
       appointmentModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       const result = await service.updateAppointment(ownerId, appointmentId, {
         type: ' vaccination ',
@@ -201,7 +209,9 @@ describe('AppointmentsService', () => {
       appointmentModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       const result = await service.updateAppointment(ownerId, appointmentId, {
         status: AppointmentStatus.COMPLETED,
@@ -215,7 +225,9 @@ describe('AppointmentsService', () => {
       appointmentModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       await expect(
         service.updateAppointment(ownerId, appointmentId, {
@@ -238,7 +250,9 @@ describe('AppointmentsService', () => {
       appointmentModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockResolvedValue({ id: petId });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
 
       await expect(
         service.deleteAppointment(ownerId, appointmentId),
@@ -251,8 +265,8 @@ describe('AppointmentsService', () => {
       appointmentModelMock.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(document),
       });
-      petsServiceMock.findPetByIdForOwner.mockRejectedValue(
-        new NotFoundException('Pet not found'),
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockRejectedValue(
+        new NotFoundException('Appointment not found'),
       );
 
       await expect(

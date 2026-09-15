@@ -9,6 +9,8 @@ import { Model, isValidObjectId } from 'mongoose';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UserRole } from './enums/user-role.enum';
+import { CreateUserOptions } from './interfaces/create-user-options.interface';
 import { UserWithPasswordHash } from './interfaces/user-with-password-hash.interface';
 import { UserModel } from './models/user.model';
 import { User, UserDocument } from './schemas/user.schema';
@@ -19,8 +21,18 @@ export class UsersService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
   ) {}
 
-  async createUser(input: CreateUserDto): Promise<UserModel> {
+  async createUser(
+    input: CreateUserDto,
+    options: CreateUserOptions = {},
+  ): Promise<UserModel> {
     const dto = await this.validateCreateUserInput(input);
+
+    if (!options.allowElevatedRoles) {
+      if (dto.role !== UserRole.USER) {
+        throw new BadRequestException('Invalid role for user creation');
+      }
+      dto.role = UserRole.USER;
+    }
 
     try {
       const created = await this.userModel.create({

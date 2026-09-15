@@ -8,7 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Model, Types, isValidObjectId } from 'mongoose';
-import { PetsService } from '../pets/pets.service';
+import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateMedicationInput } from './dto/create-medication.input';
 import { UpdateMedicationInput } from './dto/update-medication.input';
 import { MedicationModel } from './models/medication.model';
@@ -19,7 +19,7 @@ export class MedicationsService {
   constructor(
     @InjectModel(Medication.name)
     private readonly medicationModel: Model<MedicationDocument>,
-    private readonly petsService: PetsService,
+    private readonly petOwnershipService: PetOwnershipService,
   ) {}
 
   async createMedication(
@@ -28,7 +28,11 @@ export class MedicationsService {
   ): Promise<MedicationModel> {
     const dto = await this.validateCreateInput(input);
     this.assertEndDateNotBeforeStartDate(dto.startDate, dto.endDate);
-    await this.ensurePetBelongsToOwner(ownerId, dto.petId, 'Pet not found');
+    await this.petOwnershipService.assertPetBelongsToOwner(
+      ownerId,
+      dto.petId,
+      'Pet not found',
+    );
 
     const isActive = dto.isActive ?? true;
 
@@ -57,7 +61,11 @@ export class MedicationsService {
     ownerId: string,
     petId: string,
   ): Promise<MedicationModel[]> {
-    await this.ensurePetBelongsToOwner(ownerId, petId, 'Pet not found');
+    await this.petOwnershipService.assertPetBelongsToOwner(
+      ownerId,
+      petId,
+      'Pet not found',
+    );
 
     const medications = await this.medicationModel
       .find({ petId: new Types.ObjectId(petId) })
@@ -169,28 +177,13 @@ export class MedicationsService {
       throw new NotFoundException('Medication not found');
     }
 
-    await this.ensurePetBelongsToOwner(
+    await this.petOwnershipService.assertPetBelongsToOwner(
       ownerId,
       medication.petId.toString(),
       'Medication not found',
     );
 
     return medication;
-  }
-
-  private async ensurePetBelongsToOwner(
-    ownerId: string,
-    petId: string,
-    notFoundMessage: string,
-  ): Promise<void> {
-    try {
-      await this.petsService.findPetByIdForOwner(ownerId, petId);
-    } catch (error: unknown) {
-      if (error instanceof NotFoundException) {
-        throw new NotFoundException(notFoundMessage);
-      }
-      throw error;
-    }
   }
 
   private assertEndDateNotBeforeStartDate(

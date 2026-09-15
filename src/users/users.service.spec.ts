@@ -91,6 +91,39 @@ describe('UsersService', () => {
         }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
+
+    it('rejects elevated roles for public user creation', async () => {
+      await expect(
+        service.createUser({
+          email: 'admin@example.com',
+          firstName: 'Admin',
+          lastName: 'User',
+          role: UserRole.ADMIN,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(userModelMock.create).not.toHaveBeenCalled();
+    });
+
+    it('allows elevated roles when explicitly permitted', async () => {
+      userModelMock.create.mockResolvedValue({
+        ...mockUserDocument,
+        role: UserRole.VET,
+      });
+
+      await service.createUser(
+        {
+          email: 'vet@example.com',
+          firstName: 'Vet',
+          lastName: 'User',
+          role: UserRole.VET,
+        },
+        { allowElevatedRoles: true },
+      );
+
+      expect(userModelMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role: UserRole.VET }),
+      );
+    });
   });
 
   describe('findByEmail', () => {
