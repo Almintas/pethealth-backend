@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { AuthModule } from '../auth/auth.module';
+import { PetPhotosModule } from '../pet-photos/pet-photos.module';
 import {
   MedicalRecord,
   MedicalRecordSchema,
@@ -19,11 +21,14 @@ import {
 import { Reminder, ReminderSchema } from '../reminders/schemas/reminder.schema';
 import { PetOwnershipService } from './pet-ownership.service';
 import { Pet, PetSchema } from './schemas/pet.schema';
+import { PetPhotosController } from './pet-photos.controller';
 import { PetsResolver } from './pets.resolver';
 import { PetsService } from './pets.service';
 
 @Module({
   imports: [
+    AuthModule,
+    PetPhotosModule,
     MongooseModule.forFeature([
       { name: Pet.name, schema: PetSchema },
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
@@ -33,6 +38,7 @@ import { PetsService } from './pets.service';
       { name: Reminder.name, schema: ReminderSchema },
     ]),
   ],
+  controllers: [PetPhotosController],
   providers: [PetsService, PetOwnershipService, PetsResolver],
   exports: [PetsService, PetOwnershipService],
 })

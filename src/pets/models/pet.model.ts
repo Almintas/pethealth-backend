@@ -32,6 +32,12 @@ export class PetModel {
   })
   microchipNumber?: string;
 
+  @Field(() => String, {
+    description: 'Public URL for the pet profile photo',
+    nullable: true,
+  })
+  photoUrl?: string;
+
   @Field(() => GraphQLISODateTime, { description: 'Record creation time' })
   createdAt!: Date;
 

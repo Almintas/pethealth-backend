@@ -27,5 +27,6 @@ const defaultJwtExpiresIn = '1d' as const;
     }),
   ],
   providers: [AuthResolver, AuthService, PasswordService, JwtStrategy],
+  exports: [PassportModule, JwtModule],
 })
 export class AuthModule {}

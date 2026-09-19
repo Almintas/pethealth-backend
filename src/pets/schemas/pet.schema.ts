@@ -30,6 +30,14 @@ export class Pet {
   @Prop({ trim: true })
   microchipNumber?: string;
 
+  /** Public URL for the pet profile photo (object storage or CDN). */
+  @Prop({ trim: true })
+  photoUrl?: string;
+
+  /** Cloudinary public_id for replace/delete (not exposed via GraphQL). */
+  @Prop({ trim: true })
+  photoStorageKey?: string;
+
   @Prop({ type: Date, default: null, index: true })
   deletedAt?: Date | null;
 

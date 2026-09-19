@@ -1,6 +1,6 @@
 import { HttpStatus, INestApplication } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { ErrorRequestHandler } from 'express';
+import express, { ErrorRequestHandler } from 'express';
 import helmet from 'helmet';
 
 /** Maximum JSON request body size (GraphQL POST payloads). */
@@ -20,14 +20,17 @@ export function applyHttpSecurityMiddleware(app: INestApplication): void {
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
+      // Pet photos are served from this API and embedded by the separate frontend origin.
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
     }),
   );
 
-  expressApp.useBodyParser('json', { limit: JSON_BODY_LIMIT });
-  expressApp.useBodyParser('urlencoded', {
-    limit: URLENCODED_BODY_LIMIT,
-    extended: true,
-  });
+  // Scope JSON parsing to GraphQL so multipart pet-photo uploads are not consumed.
+  expressApp.use(
+    '/graphql',
+    express.json({ limit: JSON_BODY_LIMIT }),
+    express.urlencoded({ limit: URLENCODED_BODY_LIMIT, extended: true }),
+  );
 
   const handlePayloadTooLarge: ErrorRequestHandler = (err, _req, res, next) => {
     if (

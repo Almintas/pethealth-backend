@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -31,6 +32,11 @@ import {
 import { ACTIVE_PET_FILTER } from './constants/active-pet-filter';
 import { CreatePetInput } from './dto/create-pet.input';
 import { UpdatePetInput } from './dto/update-pet.input';
+import { processPetPhotoImage } from '../pet-photos/pet-photo-image.processor';
+import {
+  PET_PHOTO_STORAGE,
+  type PetPhotoStorage,
+} from '../pet-photos/pet-photo-storage.interface';
 import { PetModel } from './models/pet.model';
 import { Pet, PetDocument } from './schemas/pet.schema';
 
@@ -38,6 +44,8 @@ import { Pet, PetDocument } from './schemas/pet.schema';
 export class PetsService {
   constructor(
     @InjectModel(Pet.name) private readonly petModel: Model<PetDocument>,
+    @Inject(PET_PHOTO_STORAGE)
+    private readonly petPhotoStorage: PetPhotoStorage,
     @InjectModel(MedicalRecord.name)
     private readonly medicalRecordModel: Model<MedicalRecordDocument>,
     @InjectModel(Vaccination.name)
@@ -123,10 +131,71 @@ export class PetsService {
     }
   }
 
+  async uploadPetPhoto(
+    ownerId: string,
+    petId: string,
+    fileBuffer: Buffer,
+  ): Promise<PetModel> {
+    const pet = await this.findOwnedPetDocument(ownerId, petId);
+    const processed = await processPetPhotoImage(fileBuffer);
+
+    const stored = await this.petPhotoStorage.storePetPhoto(
+      ownerId,
+      petId,
+      processed.buffer,
+      processed.contentType,
+    );
+
+    const previousKey = pet.photoStorageKey;
+    pet.photoUrl = stored.photoUrl;
+    pet.photoStorageKey = stored.storageKey;
+
+    try {
+      await pet.save();
+    } catch {
+      await this.petPhotoStorage.deletePetPhoto(stored.storageKey);
+      throw new InternalServerErrorException('Failed to save pet photo');
+    }
+
+    if (previousKey && previousKey !== stored.storageKey) {
+      await this.petPhotoStorage.deletePetPhoto(previousKey);
+    }
+
+    return this.toPetModel(pet);
+  }
+
+  async removePetPhoto(ownerId: string, petId: string): Promise<PetModel> {
+    const pet = await this.findOwnedPetDocument(ownerId, petId);
+
+    if (!pet.photoStorageKey && !pet.photoUrl) {
+      return this.toPetModel(pet);
+    }
+
+    const previousKey = pet.photoStorageKey;
+    pet.photoUrl = undefined;
+    pet.photoStorageKey = undefined;
+
+    try {
+      await pet.save();
+    } catch {
+      throw new InternalServerErrorException('Failed to remove pet photo');
+    }
+
+    if (previousKey) {
+      await this.petPhotoStorage.deletePetPhoto(previousKey);
+    }
+
+    return this.toPetModel(pet);
+  }
+
   async deletePet(ownerId: string, petId: string): Promise<boolean> {
     const pet = await this.findOwnedPetDocument(ownerId, petId);
 
     try {
+      if (pet.photoStorageKey) {
+        await this.petPhotoStorage.deletePetPhoto(pet.photoStorageKey);
+      }
+
       await this.deletePetRelatedRecords(pet._id);
       pet.deletedAt = new Date();
       await pet.save();
@@ -222,6 +291,7 @@ export class PetsService {
       gender: document.gender,
       birthDate: document.birthDate,
       microchipNumber: document.microchipNumber,
+      photoUrl: document.photoUrl,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
     };

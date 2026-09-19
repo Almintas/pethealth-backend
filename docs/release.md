@@ -29,6 +29,8 @@ Do not rewrite Git history on shared branches for rollback. Roll back by redeplo
 
 Also configure `PORT` and `JWT_EXPIRES_IN` as needed for your hosting environment.
 
+For pet profile photos, set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` on the API service. The API starts without them; upload/delete return a clear error until they are configured.
+
 ## Optional throttle variables
 
 These tune rate limiting (defaults apply if omitted):

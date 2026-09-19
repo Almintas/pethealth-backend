@@ -49,6 +49,9 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Local pet photo uploads (never commit)
+/var/
+
 # Runtime data
 pids
 *.pid

@@ -1,4 +1,9 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import sharp from 'sharp';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
@@ -10,6 +15,7 @@ import { Vaccination } from '../vaccinations/schemas/vaccination.schema';
 import { ACTIVE_PET_FILTER } from './constants/active-pet-filter';
 import { CreatePetInput } from './dto/create-pet.input';
 import { UpdatePetInput } from './dto/update-pet.input';
+import { PET_PHOTO_STORAGE } from '../pet-photos/pet-photo-storage.interface';
 import { Pet } from './schemas/pet.schema';
 import { PetsService } from './pets.service';
 
@@ -32,6 +38,8 @@ describe('PetsService', () => {
     gender: 'male',
     birthDate: new Date('2020-05-01T00:00:00.000Z'),
     microchipNumber: '123456',
+    photoUrl: undefined as string | undefined,
+    photoStorageKey: undefined as string | undefined,
     deletedAt: null,
     createdAt,
     updatedAt,
@@ -49,6 +57,11 @@ describe('PetsService', () => {
     deleteMany: jest
       .fn()
       .mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
+  };
+
+  const petPhotoStorageMock = {
+    storePetPhoto: jest.fn(),
+    deletePetPhoto: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -77,6 +90,10 @@ describe('PetsService', () => {
         {
           provide: getModelToken(Reminder.name),
           useValue: relatedModelMock,
+        },
+        {
+          provide: PET_PHOTO_STORAGE,
+          useValue: petPhotoStorageMock,
         },
       ],
     }).compile();
@@ -230,6 +247,136 @@ describe('PetsService', () => {
       await expect(
         service.deletePet(otherOwnerId, petId),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('uploadPetPhoto', () => {
+    it('stores a photo for an owned pet', async () => {
+      const ownedPet = buildPetDocument(ownerId);
+      petModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(ownedPet),
+      });
+
+      const png = await sharp({
+        create: {
+          width: 32,
+          height: 32,
+          channels: 3,
+          background: '#224466',
+        },
+      })
+        .png()
+        .toBuffer();
+
+      petPhotoStorageMock.storePetPhoto.mockResolvedValue({
+        storageKey: 'new-key.webp',
+        photoUrl: 'https://res.cloudinary.com/demo/image/upload/new-key.webp',
+      });
+
+      const result = await service.uploadPetPhoto(ownerId, petId, png);
+
+      expect(petPhotoStorageMock.storePetPhoto).toHaveBeenCalled();
+      expect(ownedPet.save).toHaveBeenCalled();
+      expect(result.photoUrl).toContain('new-key.webp');
+    });
+
+    it('does not upload for another user pet', async () => {
+      petModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      });
+
+      const png = await sharp({
+        create: {
+          width: 16,
+          height: 16,
+          channels: 3,
+          background: '#000000',
+        },
+      })
+        .png()
+        .toBuffer();
+
+      await expect(
+        service.uploadPetPhoto(otherOwnerId, petId, png),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('removePetPhoto', () => {
+    it('clears photo metadata and deletes storage object', async () => {
+      const ownedPet = buildPetDocument(ownerId);
+      ownedPet.photoUrl = 'http://example.com/photo.webp';
+      ownedPet.photoStorageKey = 'old-key.webp';
+
+      petModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(ownedPet),
+      });
+
+      const result = await service.removePetPhoto(ownerId, petId);
+
+      expect(ownedPet.photoUrl).toBeUndefined();
+      expect(ownedPet.photoStorageKey).toBeUndefined();
+      expect(petPhotoStorageMock.deletePetPhoto).toHaveBeenCalledWith(
+        'old-key.webp',
+      );
+      expect(result.photoUrl).toBeUndefined();
+    });
+  });
+
+  describe('uploadPetPhoto storage failures', () => {
+    it('surfaces missing Cloudinary configuration', async () => {
+      const ownedPet = buildPetDocument(ownerId);
+      petModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(ownedPet),
+      });
+
+      const png = await sharp({
+        create: {
+          width: 16,
+          height: 16,
+          channels: 3,
+          background: '#112233',
+        },
+      })
+        .png()
+        .toBuffer();
+
+      petPhotoStorageMock.storePetPhoto.mockRejectedValue(
+        new ServiceUnavailableException('Pet photo uploads are not available'),
+      );
+
+      await expect(
+        service.uploadPetPhoto(ownerId, petId, png),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('deletes previous storage key after successful replacement', async () => {
+      const ownedPet = buildPetDocument(ownerId);
+      ownedPet.photoStorageKey = 'old-key';
+
+      petModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(ownedPet),
+      });
+
+      const png = await sharp({
+        create: {
+          width: 16,
+          height: 16,
+          channels: 3,
+          background: '#445566',
+        },
+      })
+        .png()
+        .toBuffer();
+
+      petPhotoStorageMock.storePetPhoto.mockResolvedValue({
+        storageKey: 'new-key',
+        photoUrl: 'https://res.cloudinary.com/demo/image/upload/new-key.webp',
+      });
+
+      await service.uploadPetPhoto(ownerId, petId, png);
+
+      expect(petPhotoStorageMock.deletePetPhoto).toHaveBeenCalledWith('old-key');
     });
   });
 });
