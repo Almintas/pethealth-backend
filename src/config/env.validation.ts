@@ -10,6 +10,7 @@ import {
   validateSync,
 } from 'class-validator';
 import { isInsecureJwtSecret } from './insecure-jwt-secrets';
+import { normalizeDeploymentEnv } from './env.normalize';
 
 export enum Environment {
   Development = 'development',
@@ -90,10 +91,51 @@ function assertJwtSecretPolicy(nodeEnv: Environment, jwtSecret: string): void {
   }
 }
 
+function formatValidationFailure(
+  config: Record<string, unknown>,
+  errors: ReturnType<typeof validateSync>,
+): string {
+  const requiredKeys = ['MONGODB_URI', 'JWT_SECRET'] as const;
+  const missing = requiredKeys.filter((key) => !pickNonEmptyString(config, key));
+
+  const hints: string[] = [];
+  if (missing.includes('MONGODB_URI')) {
+    hints.push(
+      'Set MONGODB_URI (or DATABASE_URL / MONGO_URL from your MongoDB add-on).',
+    );
+  }
+  if (missing.includes('JWT_SECRET')) {
+    hints.push(
+      'Set JWT_SECRET to a long random string (32+ characters in production).',
+    );
+  }
+
+  const hintBlock =
+    hints.length > 0
+      ? ` Deployment: ${hints.join(' ')}`
+      : '';
+
+  return `Environment configuration is invalid.${hintBlock} Details: ${errors.toString()}`;
+}
+
+function pickNonEmptyString(
+  config: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = config[key];
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export function validate(
   config: Record<string, unknown>,
 ): EnvironmentVariables {
-  const validatedConfig = plainToInstance(EnvironmentVariables, config, {
+  const normalized = normalizeDeploymentEnv(config);
+
+  const validatedConfig = plainToInstance(EnvironmentVariables, normalized, {
     enableImplicitConversion: true,
   });
 
@@ -102,7 +144,7 @@ export function validate(
   });
 
   if (errors.length > 0) {
-    throw new Error(errors.toString());
+    throw new Error(formatValidationFailure(normalized, errors));
   }
 
   assertJwtSecretPolicy(validatedConfig.NODE_ENV, validatedConfig.JWT_SECRET);
