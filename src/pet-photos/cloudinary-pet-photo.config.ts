@@ -12,7 +12,9 @@ export const DEFAULT_CLOUDINARY_PET_PHOTO_FOLDER = 'pethealth/pets';
 export function isCloudinaryPetPhotoConfigured(
   configService: ConfigService,
 ): boolean {
-  const cloudName = configService.get<string>(CLOUDINARY_ENV_KEYS.cloudName)?.trim();
+  const cloudName = configService
+    .get<string>(CLOUDINARY_ENV_KEYS.cloudName)
+    ?.trim();
   const apiKey = configService.get<string>(CLOUDINARY_ENV_KEYS.apiKey)?.trim();
   const apiSecret = configService
     .get<string>(CLOUDINARY_ENV_KEYS.apiSecret)

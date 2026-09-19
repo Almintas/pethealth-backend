@@ -32,16 +32,20 @@ async function assetExists(publicId: string): Promise<boolean> {
     secure: true,
   });
 
-  const result: unknown = await cloudinary.api.resource(publicId, {
-    resource_type: 'image',
-  });
+  try {
+    const result: unknown = await cloudinary.api.resource(publicId, {
+      resource_type: 'image',
+    });
 
-  return (
-    typeof result === 'object' &&
-    result !== null &&
-    'public_id' in result &&
-    typeof (result as { public_id: unknown }).public_id === 'string'
-  );
+    return (
+      typeof result === 'object' &&
+      result !== null &&
+      'public_id' in result &&
+      typeof (result as { public_id: unknown }).public_id === 'string'
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function buildTinyPng(): Promise<Buffer> {
@@ -93,7 +97,7 @@ async function buildTinyPng(): Promise<Buffer> {
 
       await storage.deletePetPhoto(stored.storageKey);
 
-      await expect(assetExists(stored.storageKey)).rejects.toThrow();
+      await expect(assetExists(stored.storageKey)).resolves.toBe(false);
     });
 
     it('replace flow deletes the previous public_id', async () => {
@@ -114,7 +118,7 @@ async function buildTinyPng(): Promise<Buffer> {
       expect(second.storageKey).not.toBe(first.storageKey);
 
       await storage.deletePetPhoto(first.storageKey);
-      await expect(assetExists(first.storageKey)).rejects.toThrow();
+      await expect(assetExists(first.storageKey)).resolves.toBe(false);
       await expect(assetExists(second.storageKey)).resolves.toBe(true);
 
       await storage.deletePetPhoto(second.storageKey);

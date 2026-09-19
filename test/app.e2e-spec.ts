@@ -3,14 +3,18 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { Connection } from 'mongoose';
+import { Connection, Types } from 'mongoose';
+import { UserRole } from '../src/users/enums/user-role.enum';
 import {
   expectGraphqlErrors,
   postGraphql,
   uniqueEmail,
 } from './helpers/graphql-test.helpers';
 import { applyHttpSecurityMiddleware } from '../src/http-security.config';
+import { ConfigService } from '@nestjs/config';
+import { isCloudinaryPetPhotoConfigured } from '../src/pet-photos/cloudinary-pet-photo.config';
 import request from 'supertest';
+import sharp from 'sharp';
 
 const REGISTER_MUTATION = `
   mutation Register($input: RegisterInput!) {
@@ -72,6 +76,11 @@ const UPDATE_PET_MUTATION = `
     }
   }
 `;
+
+type NestErrorBody = {
+  message?: string | string[];
+  photoUrl?: string;
+};
 
 const DELETE_PET_MUTATION = `
   mutation DeletePet($id: ID!) {
@@ -177,6 +186,13 @@ describe('PetHealth GraphQL (e2e)', () => {
     };
   }
 
+  async function setUserRole(userId: string, role: UserRole): Promise<void> {
+    const connection = app.get<Connection>(getConnectionToken());
+    await connection
+      .collection('users')
+      .updateOne({ _id: new Types.ObjectId(userId) }, { $set: { role } });
+  }
+
   async function loginUser(email: string, password: string): Promise<string> {
     const response = await postGraphql<{
       login: { accessToken: string };
@@ -264,9 +280,9 @@ describe('PetHealth GraphQL (e2e)', () => {
   });
 
   describe('pet and medical record ownership', () => {
-    it('allows an owner to create and retrieve their pet and medical record', async () => {
+    it('allows an owner to manage pets and read clinic records but not create them', async () => {
       const owner = await registerUser('owner-happy');
-      const token = await loginUser(owner.email, owner.password);
+      const ownerToken = await loginUser(owner.email, owner.password);
 
       const petResponse = await postGraphql<{
         createPet: { id: string; name: string };
@@ -279,7 +295,7 @@ describe('PetHealth GraphQL (e2e)', () => {
             species: 'Dog',
           },
         },
-        token,
+        ownerToken,
       );
 
       expect(petResponse.body.errors).toBeUndefined();
@@ -287,9 +303,30 @@ describe('PetHealth GraphQL (e2e)', () => {
 
       const getPetResponse = await postGraphql<{
         pet: { id: string; name: string };
-      }>(app, PET_QUERY, { id: petId }, token);
+      }>(app, PET_QUERY, { id: petId }, ownerToken);
       expect(getPetResponse.body.errors).toBeUndefined();
       expect(getPetResponse.body.data?.pet.name).toBe('Buddy');
+
+      const ownerCreateRecord = await postGraphql(
+        app,
+        CREATE_MEDICAL_RECORD_MUTATION,
+        {
+          input: {
+            petId,
+            date: new Date('2024-06-01T10:00:00.000Z').toISOString(),
+            type: 'checkup',
+            title: 'Annual exam',
+          },
+        },
+        ownerToken,
+      );
+      expectGraphqlErrors(
+        ownerCreateRecord.body,
+        'cannot modify veterinary health records',
+      );
+
+      await setUserRole(owner.id, UserRole.VET);
+      const vetToken = await loginUser(owner.email, owner.password);
 
       const recordResponse = await postGraphql<{
         createMedicalRecord: { id: string; title: string };
@@ -304,7 +341,7 @@ describe('PetHealth GraphQL (e2e)', () => {
             title: 'Annual exam',
           },
         },
-        token,
+        vetToken,
       );
 
       expect(recordResponse.body.errors).toBeUndefined();
@@ -312,7 +349,7 @@ describe('PetHealth GraphQL (e2e)', () => {
 
       const getRecordResponse = await postGraphql<{
         medicalRecord: { id: string; title: string };
-      }>(app, MEDICAL_RECORD_QUERY, { id: recordId }, token);
+      }>(app, MEDICAL_RECORD_QUERY, { id: recordId }, ownerToken);
 
       expect(getRecordResponse.body.errors).toBeUndefined();
       expect(getRecordResponse.body.data?.medicalRecord.title).toBe(
@@ -339,6 +376,9 @@ describe('PetHealth GraphQL (e2e)', () => {
       );
       const petId = petResponse.body.data!.createPet.id;
 
+      await setUserRole(userA.id, UserRole.VET);
+      const vetTokenA = await loginUser(userA.email, userA.password);
+
       const recordResponse = await postGraphql<{
         createMedicalRecord: { id: string };
       }>(
@@ -352,8 +392,9 @@ describe('PetHealth GraphQL (e2e)', () => {
             title: 'Rabies shot',
           },
         },
-        tokenA,
+        vetTokenA,
       );
+      expect(recordResponse.body.errors).toBeUndefined();
       const recordId = recordResponse.body.data!.createMedicalRecord.id;
 
       const petAsB = await postGraphql(app, PET_QUERY, { id: petId }, tokenB);
@@ -394,6 +435,147 @@ describe('PetHealth GraphQL (e2e)', () => {
       );
       expect(petStillOwned.body.errors).toBeUndefined();
       expect(petStillOwned.body.data?.pet.name).toBe('Mittens');
+    });
+  });
+
+  describe('pet profile photos (REST)', () => {
+    async function createPetForToken(
+      token: string,
+      name = 'PhotoPet',
+    ): Promise<string> {
+      const petResponse = await postGraphql<{ createPet: { id: string } }>(
+        app,
+        CREATE_PET_MUTATION,
+        {
+          input: {
+            name,
+            species: 'Dog',
+          },
+        },
+        token,
+      );
+      expect(petResponse.body.errors).toBeUndefined();
+      return petResponse.body.data!.createPet.id;
+    }
+
+    async function buildTestPng(): Promise<Buffer> {
+      return sharp({
+        create: {
+          width: 48,
+          height: 48,
+          channels: 3,
+          background: '#336699',
+        },
+      })
+        .png()
+        .toBuffer();
+    }
+
+    it('uploads when Cloudinary is configured, otherwise returns a safe configuration error', async () => {
+      expect(app).toBeDefined();
+      const config = app.get(ConfigService);
+      const cloudinaryConfigured = isCloudinaryPetPhotoConfigured(config);
+
+      const owner = await registerUser('photo-config');
+      const token = await loginUser(owner.email, owner.password);
+      const petId = await createPetForToken(token);
+      const png = await buildTestPng();
+
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      const response = await request(httpServer)
+        .post(`/pets/${petId}/photo`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('photo', png, {
+          filename: 'pet.png',
+          contentType: 'image/png',
+        });
+
+      const body = response.body as NestErrorBody;
+
+      if (cloudinaryConfigured) {
+        expect(response.status).toBe(200);
+        expect(body.photoUrl).toMatch(/^https:\/\//);
+      } else {
+        expect(response.status).toBe(503);
+        const message =
+          typeof body.message === 'string'
+            ? body.message
+            : (body.message?.join(' ') ?? '');
+        expect(message).toMatch(/not available/i);
+      }
+
+      expect(JSON.stringify(body)).not.toContain('api_secret');
+    });
+
+    it('rejects photo upload for another owner pet', async () => {
+      const ownerA = await registerUser('photo-owner-a');
+      const ownerB = await registerUser('photo-owner-b');
+      const tokenA = await loginUser(ownerA.email, ownerA.password);
+      const tokenB = await loginUser(ownerB.email, ownerB.password);
+      const petId = await createPetForToken(tokenA);
+      const png = await buildTestPng();
+
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      const response = await request(httpServer)
+        .post(`/pets/${petId}/photo`)
+        .set('Authorization', `Bearer ${tokenB}`)
+        .attach('photo', png, {
+          filename: 'pet.png',
+          contentType: 'image/png',
+        });
+
+      expect(response.status).toBe(404);
+    });
+
+    it('rejects photo delete for another owner pet', async () => {
+      const ownerA = await registerUser('photo-delete-a');
+      const ownerB = await registerUser('photo-delete-b');
+      const tokenA = await loginUser(ownerA.email, ownerA.password);
+      const tokenB = await loginUser(ownerB.email, ownerB.password);
+      const petId = await createPetForToken(tokenA);
+
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      const response = await request(httpServer)
+        .delete(`/pets/${petId}/photo`)
+        .set('Authorization', `Bearer ${tokenB}`);
+
+      expect(response.status).toBe(404);
+    });
+
+    it('rejects invalid image uploads', async () => {
+      const owner = await registerUser('photo-invalid');
+      const token = await loginUser(owner.email, owner.password);
+      const petId = await createPetForToken(token);
+
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      const response = await request(httpServer)
+        .post(`/pets/${petId}/photo`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('photo', Buffer.from('not-an-image'), {
+          filename: 'fake.png',
+          contentType: 'image/png',
+        });
+
+      expect(response.status).toBe(400);
+      const body = response.body as NestErrorBody;
+      const message =
+        typeof body.message === 'string'
+          ? body.message
+          : (body.message?.join(' ') ?? '');
+      expect(message).toMatch(/JPG|PNG|WebP/i);
+    });
+
+    it('rejects unauthenticated photo upload', async () => {
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      const png = await buildTestPng();
+      const response = await request(httpServer)
+        .post('/pets/507f1f77bcf86cd799439011/photo')
+        .attach('photo', png, {
+          filename: 'pet.png',
+          contentType: 'image/png',
+        });
+
+      expect(response.status).toBe(401);
     });
   });
 

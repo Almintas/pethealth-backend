@@ -1,7 +1,10 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { VETERINARY_HEALTH_WRITE_ROLES } from '../auth/constants/veterinary-health-write.roles';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { UserModel } from '../users/models/user.model';
 import { CreateMedicalRecordInput } from './dto/create-medical-record.input';
 import { UpdateMedicalRecordInput } from './dto/update-medical-record.input';
@@ -13,6 +16,8 @@ import { MedicalRecordsService } from './medical-records.service';
 export class MedicalRecordsResolver {
   constructor(private readonly medicalRecordsService: MedicalRecordsService) {}
 
+  @Roles(...VETERINARY_HEALTH_WRITE_ROLES)
+  @UseGuards(RolesGuard)
   @Mutation(() => MedicalRecordModel, {
     name: 'createMedicalRecord',
     description: 'Create a medical record for one of the user pets',
@@ -24,6 +29,8 @@ export class MedicalRecordsResolver {
     return this.medicalRecordsService.createMedicalRecord(user.id, input);
   }
 
+  @Roles(...VETERINARY_HEALTH_WRITE_ROLES)
+  @UseGuards(RolesGuard)
   @Mutation(() => MedicalRecordModel, {
     name: 'updateMedicalRecord',
     description: 'Update a medical record for one of the user pets',
@@ -36,6 +43,8 @@ export class MedicalRecordsResolver {
     return this.medicalRecordsService.updateMedicalRecord(user.id, id, input);
   }
 
+  @Roles(...VETERINARY_HEALTH_WRITE_ROLES)
+  @UseGuards(RolesGuard)
   @Mutation(() => Boolean, {
     name: 'deleteMedicalRecord',
     description: 'Delete a medical record for one of the user pets',

@@ -7,6 +7,7 @@ import { UsersModule } from '../users/users.module';
 import { AuthResolver } from './auth.resolver';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
+import { RolesGuard } from './guards/roles.guard';
 import { PasswordService } from './password.service';
 
 const defaultJwtExpiresIn = '1d' as const;
@@ -26,7 +27,13 @@ const defaultJwtExpiresIn = '1d' as const;
       }),
     }),
   ],
-  providers: [AuthResolver, AuthService, PasswordService, JwtStrategy],
-  exports: [PassportModule, JwtModule],
+  providers: [
+    AuthResolver,
+    AuthService,
+    PasswordService,
+    JwtStrategy,
+    RolesGuard,
+  ],
+  exports: [PassportModule, JwtModule, RolesGuard],
 })
 export class AuthModule {}

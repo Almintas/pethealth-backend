@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  InternalServerErrorException,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -321,6 +322,17 @@ describe('PetsService', () => {
       );
       expect(result.photoUrl).toBeUndefined();
     });
+
+    it('does not remove photo for another user pet', async () => {
+      petModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      });
+
+      await expect(
+        service.removePetPhoto(otherOwnerId, petId),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(petPhotoStorageMock.deletePetPhoto).not.toHaveBeenCalled();
+    });
   });
 
   describe('uploadPetPhoto storage failures', () => {
@@ -376,7 +388,42 @@ describe('PetsService', () => {
 
       await service.uploadPetPhoto(ownerId, petId, png);
 
-      expect(petPhotoStorageMock.deletePetPhoto).toHaveBeenCalledWith('old-key');
+      expect(petPhotoStorageMock.deletePetPhoto).toHaveBeenCalledWith(
+        'old-key',
+      );
+    });
+
+    it('removes uploaded storage when database save fails', async () => {
+      const ownedPet = buildPetDocument(ownerId);
+      petModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(ownedPet),
+      });
+
+      const png = await sharp({
+        create: {
+          width: 16,
+          height: 16,
+          channels: 3,
+          background: '#aabbcc',
+        },
+      })
+        .png()
+        .toBuffer();
+
+      petPhotoStorageMock.storePetPhoto.mockResolvedValue({
+        storageKey: 'orphan-key',
+        photoUrl:
+          'https://res.cloudinary.com/demo/image/upload/orphan-key.webp',
+      });
+      ownedPet.save.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(
+        service.uploadPetPhoto(ownerId, petId, png),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+
+      expect(petPhotoStorageMock.deletePetPhoto).toHaveBeenCalledWith(
+        'orphan-key',
+      );
     });
   });
 });

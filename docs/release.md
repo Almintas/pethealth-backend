@@ -31,6 +31,35 @@ Also configure `PORT` and `JWT_EXPIRES_IN` as needed for your hosting environmen
 
 For pet profile photos, set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` on the API service. The API starts without them; upload/delete return a clear error until they are configured.
 
+Optional: `CLOUDINARY_PET_PHOTO_FOLDER` (defaults to `pethealth/pets`).
+
+Cloudinary asset cleanup is best-effort on replace/delete; a failed remote delete may leave an orphaned asset in Cloudinary while MongoDB stays consistent.
+
+### Pet profile photos (REST)
+
+Photos are **not** uploaded through GraphQL. The Owner Portal uses JWT-authenticated REST endpoints (multipart form field `photo`):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/pets/:petId/photo` | Upload or replace the profile photo (max 5 MB; JPG/PNG/WebP validated server-side with Sharp). Returns the updated `PetModel` JSON. |
+| `DELETE` | `/pets/:petId/photo` | Remove the profile photo. Returns the updated `PetModel` JSON. |
+
+`photoUrl` is exposed on GraphQL pet queries; `photoStorageKey` (Cloudinary `public_id`) is stored in MongoDB only and is not returned to clients.
+
+Configure the frontend with `VITE_GRAPHQL_URL` and, when the API origin differs from the GraphQL URL, `VITE_API_BASE_URL` pointing at the Nest HTTP origin (no trailing path).
+
+## Owner Portal authorization
+
+Accounts registered through the Owner Portal use role `USER`. They may manage their own pets, reminders, appointments, and pet photos, and **read** veterinary health data (medical records, vaccinations, medications) for pets they own.
+
+GraphQL mutations that modify veterinary health data (`createMedicalRecord`, `updateMedicalRecord`, `deleteMedicalRecord`, vaccination mutations, medication mutations) require role `VET` or `ADMIN`. Owner accounts receive HTTP 403 / GraphQL forbidden errors if they call these mutations.
+
+The future Veterinary System will use elevated roles (or service accounts) to write clinic-managed health data without removing these mutations from the API.
+
+## Reminders and future notifications
+
+Owner reminders are stored with `dueAt`, `status`, `type`, and optional `sourceType` / `sourceId` for linkage to appointments or clinic-generated items. No email or push delivery is implemented in this release; a future notification service can poll or subscribe to pending reminders and respect per-user preferences when those are added.
+
 ## Optional throttle variables
 
 These tune rate limiting (defaults apply if omitted):

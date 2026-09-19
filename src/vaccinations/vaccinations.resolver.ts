@@ -1,7 +1,10 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { VETERINARY_HEALTH_WRITE_ROLES } from '../auth/constants/veterinary-health-write.roles';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { UserModel } from '../users/models/user.model';
 import { CreateVaccinationInput } from './dto/create-vaccination.input';
 import { UpdateVaccinationInput } from './dto/update-vaccination.input';
@@ -13,6 +16,8 @@ import { VaccinationsService } from './vaccinations.service';
 export class VaccinationsResolver {
   constructor(private readonly vaccinationsService: VaccinationsService) {}
 
+  @Roles(...VETERINARY_HEALTH_WRITE_ROLES)
+  @UseGuards(RolesGuard)
   @Mutation(() => VaccinationModel, {
     name: 'createVaccination',
     description: 'Create a vaccination record for one of the user pets',
@@ -24,6 +29,8 @@ export class VaccinationsResolver {
     return this.vaccinationsService.createVaccination(user.id, input);
   }
 
+  @Roles(...VETERINARY_HEALTH_WRITE_ROLES)
+  @UseGuards(RolesGuard)
   @Mutation(() => VaccinationModel, {
     name: 'updateVaccination',
     description: 'Update a vaccination record for one of the user pets',
@@ -36,6 +43,8 @@ export class VaccinationsResolver {
     return this.vaccinationsService.updateVaccination(user.id, id, input);
   }
 
+  @Roles(...VETERINARY_HEALTH_WRITE_ROLES)
+  @UseGuards(RolesGuard)
   @Mutation(() => Boolean, {
     name: 'deleteVaccination',
     description: 'Delete a vaccination record for one of the user pets',

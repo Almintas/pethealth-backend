@@ -6,4 +6,3 @@ export const PET_PHOTO_ALLOWED_MIME_TYPES = new Set([
   'image/png',
   'image/webp',
 ]);
-
