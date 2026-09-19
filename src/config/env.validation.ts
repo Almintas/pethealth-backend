@@ -111,9 +111,7 @@ function formatValidationFailure(
   }
 
   const hintBlock =
-    hints.length > 0
-      ? ` Deployment: ${hints.join(' ')}`
-      : '';
+    hints.length > 0 ? ` Deployment: ${hints.join(' ')}` : '';
 
   return `Environment configuration is invalid.${hintBlock} Details: ${errors.toString()}`;
 }
