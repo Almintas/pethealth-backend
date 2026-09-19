@@ -32,11 +32,16 @@ async function assetExists(publicId: string): Promise<boolean> {
     secure: true,
   });
 
-  const result = await cloudinary.api.resource(publicId, {
+  const result: unknown = await cloudinary.api.resource(publicId, {
     resource_type: 'image',
   });
 
-  return Boolean(result?.public_id);
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    'public_id' in result &&
+    typeof (result as { public_id: unknown }).public_id === 'string'
+  );
 }
 
 async function buildTinyPng(): Promise<Buffer> {
@@ -93,7 +98,12 @@ async function buildTinyPng(): Promise<Buffer> {
 
     it('replace flow deletes the previous public_id', async () => {
       const buffer = await buildTinyPng();
-      const first = await storage.storePetPhoto(ownerId, petId, buffer, 'image/png');
+      const first = await storage.storePetPhoto(
+        ownerId,
+        petId,
+        buffer,
+        'image/png',
+      );
       const second = await storage.storePetPhoto(
         ownerId,
         petId,

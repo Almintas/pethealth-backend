@@ -11,7 +11,10 @@ import {
   isCloudinaryPetPhotoConfigured,
   readCloudinaryPetPhotoFolder,
 } from './cloudinary-pet-photo.config';
-import type { PetPhotoStorage, StoredPetPhoto } from './pet-photo-storage.interface';
+import type {
+  PetPhotoStorage,
+  StoredPetPhoto,
+} from './pet-photo-storage.interface';
 
 const AVATAR_TRANSFORM = 'c_fill,w_512,h_512,f_auto,q_auto';
 
@@ -30,14 +33,18 @@ export class CloudinaryPetPhotoStorage implements PetPhotoStorage {
     }
 
     if (!isCloudinaryPetPhotoConfigured(this.configService)) {
-      throw new ServiceUnavailableException(PET_PHOTO_STORAGE_UNAVAILABLE_MESSAGE);
+      throw new ServiceUnavailableException(
+        PET_PHOTO_STORAGE_UNAVAILABLE_MESSAGE,
+      );
     }
 
     cloudinary.config({
       cloud_name: this.configService.getOrThrow<string>(
         CLOUDINARY_ENV_KEYS.cloudName,
       ),
-      api_key: this.configService.getOrThrow<string>(CLOUDINARY_ENV_KEYS.apiKey),
+      api_key: this.configService.getOrThrow<string>(
+        CLOUDINARY_ENV_KEYS.apiKey,
+      ),
       api_secret: this.configService.getOrThrow<string>(
         CLOUDINARY_ENV_KEYS.apiSecret,
       ),
@@ -51,8 +58,9 @@ export class CloudinaryPetPhotoStorage implements PetPhotoStorage {
     _ownerId: string,
     petId: string,
     buffer: Buffer,
-    _contentType: string,
+    contentType: string,
   ): Promise<StoredPetPhoto> {
+    void contentType;
     this.ensureConfigured();
 
     const folderBase = readCloudinaryPetPhotoFolder(this.configService);
@@ -71,7 +79,11 @@ export class CloudinaryPetPhotoStorage implements PetPhotoStorage {
           },
           (error, result) => {
             if (error || !result) {
-              reject(error ?? new Error('Cloudinary upload failed'));
+              reject(
+                error instanceof Error
+                  ? error
+                  : new Error('Cloudinary upload failed'),
+              );
               return;
             }
             resolve({ public_id: result.public_id });
