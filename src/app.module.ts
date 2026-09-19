@@ -5,6 +5,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { GraphQLModule } from '@nestjs/graphql';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { GqlThrottlerGuard } from './common/guards/gql-throttler.guard';
@@ -22,10 +23,27 @@ import { MedicationsModule } from './medications/medications.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { VaccinationsModule } from './vaccinations/vaccinations.module';
 
+function resolveGraphqlSchemaPath(): string {
+  const candidates = [
+    join(__dirname, 'schema.gql'),
+    join(process.cwd(), 'dist/schema.gql'),
+    join(process.cwd(), 'src/schema.gql'),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return join(process.cwd(), 'src/schema.gql');
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      expandVariables: true,
       validate,
     }),
     ThrottlerModule.forRootAsync({
@@ -37,7 +55,7 @@ import { VaccinationsModule } from './vaccinations/vaccinations.module';
       driver: ApolloDriver,
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
+        autoSchemaFile: resolveGraphqlSchemaPath(),
         sortSchema: true,
         playground: false,
         introspection: !isProductionEnvironment(

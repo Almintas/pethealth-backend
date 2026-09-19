@@ -57,4 +57,16 @@ describe('env validation', () => {
 
     expect(result.NODE_ENV).toBe(Environment.Production);
   });
+
+  it('maps DATABASE_URL to MONGODB_URI when MONGODB_URI is unset', () => {
+    const result = validate({
+      DATABASE_URL: 'mongodb://localhost:27017/from-database-url',
+      JWT_SECRET: baseConfig.JWT_SECRET,
+      NODE_ENV: Environment.Development,
+    });
+
+    expect(result.MONGODB_URI).toBe(
+      'mongodb://localhost:27017/from-database-url',
+    );
+  });
 });

@@ -23,8 +23,8 @@ Do not rewrite Git history on shared branches for rollback. Roll back by redeplo
 | Variable | Description |
 |----------|-------------|
 | `NODE_ENV` | Set to `production` in production. |
-| `MONGODB_URI` | MongoDB connection string for the production database. |
-| `JWT_SECRET` | Signing secret for access tokens. In production it must be at least 32 characters and must not use known insecure placeholder values. |
+| `MONGODB_URI` | MongoDB connection string for the production database. If your host only provides `DATABASE_URL` or `MONGO_URL` (common on Render/Railway Mongo add-ons), set that instead — the API maps it to `MONGODB_URI` at startup. |
+| `JWT_SECRET` | Signing secret for access tokens. In production it must be at least 32 characters and must not use known insecure placeholder values. **You must set this in the deployment dashboard**; a local `.env` file is not used in Docker unless you mount it. |
 | `CORS_ORIGIN` | Comma-separated list of browser origins allowed to call the API (e.g. `https://app.example.com`). Required when `NODE_ENV=production`. |
 
 Also configure `PORT` and `JWT_EXPIRES_IN` as needed for your hosting environment.
