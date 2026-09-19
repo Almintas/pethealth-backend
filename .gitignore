@@ -3,6 +3,9 @@
 /node_modules
 /build
 
+# generated GraphQL schema (code-first)
+/src/schema.gql
+
 # Logs
 logs
 *.log
@@ -45,6 +48,9 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+
+# Local pet photo uploads (never commit)
+/var/
 
 # Runtime data
 pids
