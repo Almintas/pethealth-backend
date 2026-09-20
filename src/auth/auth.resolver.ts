@@ -3,8 +3,10 @@ import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { UserModel } from '../users/models/user.model';
 import { AuthRateLimit } from './decorators/auth-rate-limit.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { ChangePasswordInput } from './dto/change-password.input';
 import { LoginInput } from './dto/login.input';
 import { RegisterInput } from './dto/register.input';
+import { UpdateProfileInput } from './dto/update-profile.input';
 import { GqlAuthGuard } from './guards/gql-auth.guard';
 import { AuthPayload } from './models/auth-payload.model';
 import { AuthService } from './auth.service';
@@ -38,5 +40,29 @@ export class AuthResolver {
   @UseGuards(GqlAuthGuard)
   me(@CurrentUser() user: UserModel): UserModel {
     return user;
+  }
+
+  @Mutation(() => UserModel, {
+    name: 'updateProfile',
+    description: 'Update the authenticated user profile',
+  })
+  @UseGuards(GqlAuthGuard)
+  updateProfile(
+    @CurrentUser() user: UserModel,
+    @Args('input') input: UpdateProfileInput,
+  ): Promise<UserModel> {
+    return this.authService.updateProfile(user, input);
+  }
+
+  @Mutation(() => Boolean, {
+    name: 'changePassword',
+    description: 'Change password for the authenticated user',
+  })
+  @UseGuards(GqlAuthGuard)
+  changePassword(
+    @CurrentUser() user: UserModel,
+    @Args('input') input: ChangePasswordInput,
+  ): Promise<boolean> {
+    return this.authService.changePassword(user, input);
   }
 }
