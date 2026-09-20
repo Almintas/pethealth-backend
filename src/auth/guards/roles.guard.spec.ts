@@ -19,6 +19,11 @@ function buildUser(role: UserRole): UserModel {
     role,
     createdAt: new Date(),
     updatedAt: new Date(),
+    notificationPreferences: {
+      emailAppointmentReminders: true,
+      emailMedicationReminders: true,
+      emailVaccinationReminders: true,
+    },
   };
 }
 

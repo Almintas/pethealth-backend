@@ -6,6 +6,7 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { ChangePasswordInput } from './dto/change-password.input';
 import { LoginInput } from './dto/login.input';
 import { RegisterInput } from './dto/register.input';
+import { UpdateNotificationPreferencesInput } from './dto/update-notification-preferences.input';
 import { UpdateProfileInput } from './dto/update-profile.input';
 import { GqlAuthGuard } from './guards/gql-auth.guard';
 import { AuthPayload } from './models/auth-payload.model';
@@ -64,5 +65,17 @@ export class AuthResolver {
     @Args('input') input: ChangePasswordInput,
   ): Promise<boolean> {
     return this.authService.changePassword(user, input);
+  }
+
+  @Mutation(() => UserModel, {
+    name: 'updateNotificationPreferences',
+    description: 'Update email notification preferences for the current user',
+  })
+  @UseGuards(GqlAuthGuard)
+  updateNotificationPreferences(
+    @CurrentUser() user: UserModel,
+    @Args('input') input: UpdateNotificationPreferencesInput,
+  ): Promise<UserModel> {
+    return this.authService.updateNotificationPreferences(user, input);
   }
 }

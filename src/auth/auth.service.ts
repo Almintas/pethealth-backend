@@ -14,6 +14,7 @@ import { UsersService } from '../users/users.service';
 import { ChangePasswordInput } from './dto/change-password.input';
 import { LoginInput } from './dto/login.input';
 import { RegisterInput } from './dto/register.input';
+import { UpdateNotificationPreferencesInput } from './dto/update-notification-preferences.input';
 import { UpdateProfileInput } from './dto/update-profile.input';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { AuthPayload } from './models/auth-payload.model';
@@ -134,6 +135,42 @@ export class AuthService {
     await this.usersService.updatePasswordHash(currentUser.id, passwordHash);
 
     return true;
+  }
+
+  async updateNotificationPreferences(
+    currentUser: UserModel,
+    input: UpdateNotificationPreferencesInput,
+  ): Promise<UserModel> {
+    const dto = await this.validateUpdateNotificationPreferencesInput(input);
+
+    if (
+      dto.emailAppointmentReminders === undefined &&
+      dto.emailMedicationReminders === undefined &&
+      dto.emailVaccinationReminders === undefined
+    ) {
+      throw new BadRequestException('No notification preferences to update');
+    }
+
+    return this.usersService.updateNotificationPreferences(currentUser.id, {
+      emailAppointmentReminders: dto.emailAppointmentReminders,
+      emailMedicationReminders: dto.emailMedicationReminders,
+      emailVaccinationReminders: dto.emailVaccinationReminders,
+    });
+  }
+
+  private async validateUpdateNotificationPreferencesInput(
+    input: UpdateNotificationPreferencesInput,
+  ): Promise<UpdateNotificationPreferencesInput> {
+    const dto = plainToInstance(UpdateNotificationPreferencesInput, input, {
+      enableImplicitConversion: true,
+    });
+    const errors = await validate(dto);
+
+    if (errors.length > 0) {
+      throw new BadRequestException(errors);
+    }
+
+    return dto;
   }
 
   private async validateUpdateProfileInput(

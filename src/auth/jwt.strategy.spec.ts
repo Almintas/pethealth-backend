@@ -21,6 +21,11 @@ describe('JwtStrategy', () => {
     role: UserRole.USER,
     createdAt: new Date('2024-01-01T00:00:00.000Z'),
     updatedAt: new Date('2024-01-02T00:00:00.000Z'),
+    notificationPreferences: {
+      emailAppointmentReminders: true,
+      emailMedicationReminders: true,
+      emailVaccinationReminders: true,
+    },
   };
 
   beforeEach(async () => {
