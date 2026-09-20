@@ -1,6 +1,7 @@
 import {
   Injectable,
   InternalServerErrorException,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -23,9 +24,60 @@ export const PET_PHOTO_STORAGE_UNAVAILABLE_MESSAGE =
 
 @Injectable()
 export class CloudinaryPetPhotoStorage implements PetPhotoStorage {
+  private readonly logger = new Logger(CloudinaryPetPhotoStorage.name);
   private configured = false;
 
   constructor(private readonly configService: ConfigService) {}
+
+  /** Temporary diagnostic logging — safe fields only (no credentials). */
+  private logCloudinaryUploadStreamFailure(
+    uploadOptions: {
+      public_id: string;
+      format: string;
+      resource_type: string;
+      overwrite: boolean;
+    },
+    error: unknown,
+    missingResult: boolean,
+  ): void {
+    const payload: Record<string, unknown> = {
+      public_id: uploadOptions.public_id,
+      format: uploadOptions.format,
+      resource_type: uploadOptions.resource_type,
+      overwrite: uploadOptions.overwrite,
+      missingResult,
+    };
+
+    if (error !== null && error !== undefined) {
+      if (error instanceof Error) {
+        payload.message = error.message;
+        payload.name = error.name;
+      }
+
+      if (typeof error === 'object') {
+        const record = error as Record<string, unknown>;
+        if (typeof record.message === 'string' && !payload.message) {
+          payload.message = record.message;
+        }
+        if (typeof record.name === 'string' && !payload.name) {
+          payload.name = record.name;
+        }
+        if (typeof record.http_code === 'number') {
+          payload.http_code = record.http_code;
+        }
+        if (
+          typeof record.code === 'string' ||
+          typeof record.code === 'number'
+        ) {
+          payload.code = record.code;
+        }
+      }
+    }
+
+    this.logger.error(
+      `Cloudinary upload_stream failed (diagnostic): ${JSON.stringify(payload)}`,
+    );
+  }
 
   private ensureConfigured(): void {
     if (this.configured) {
@@ -66,19 +118,26 @@ export class CloudinaryPetPhotoStorage implements PetPhotoStorage {
     const folderBase = readCloudinaryPetPhotoFolder(this.configService);
     const publicId = `${folderBase}/${petId}/${randomUUID()}`;
 
+    const uploadOptions = {
+      public_id: publicId,
+      resource_type: 'image' as const,
+      overwrite: false,
+      format: 'webp' as const,
+    };
+
     try {
       const uploadResult = await new Promise<{
         public_id: string;
       }>((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
-          {
-            public_id: publicId,
-            resource_type: 'image',
-            overwrite: false,
-            format: 'webp',
-          },
+          uploadOptions,
           (error, result) => {
             if (error || !result) {
+              this.logCloudinaryUploadStreamFailure(
+                uploadOptions,
+                error,
+                !result,
+              );
               reject(
                 error instanceof Error
                   ? error
