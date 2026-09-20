@@ -11,8 +11,10 @@ import { validate } from 'class-validator';
 import { UserRole } from '../users/enums/user-role.enum';
 import { UserModel } from '../users/models/user.model';
 import { UsersService } from '../users/users.service';
+import { ChangePasswordInput } from './dto/change-password.input';
 import { LoginInput } from './dto/login.input';
 import { RegisterInput } from './dto/register.input';
+import { UpdateProfileInput } from './dto/update-profile.input';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { AuthPayload } from './models/auth-payload.model';
 import { PasswordService } from './password.service';
@@ -76,6 +78,92 @@ export class AuthService {
       accessToken: this.jwtService.sign(payload),
       user: authRecord.user,
     };
+  }
+
+  async updateProfile(
+    currentUser: UserModel,
+    input: UpdateProfileInput,
+  ): Promise<UserModel> {
+    const dto = await this.validateUpdateProfileInput(input);
+
+    if (
+      dto.firstName === undefined &&
+      dto.lastName === undefined &&
+      dto.email === undefined
+    ) {
+      throw new BadRequestException('No profile fields to update');
+    }
+
+    return this.usersService.updateProfile(currentUser.id, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      email: dto.email,
+    });
+  }
+
+  async changePassword(
+    currentUser: UserModel,
+    input: ChangePasswordInput,
+  ): Promise<boolean> {
+    const dto = await this.validateChangePasswordInput(input);
+
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException(
+        'New password must be different from the current password',
+      );
+    }
+
+    const authRecord = await this.usersService.findByIdWithPasswordHash(
+      currentUser.id,
+    );
+
+    if (!authRecord) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const passwordMatches = await this.passwordService.compare(
+      dto.currentPassword,
+      authRecord.passwordHash,
+    );
+
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const passwordHash = await this.passwordService.hash(dto.newPassword);
+    await this.usersService.updatePasswordHash(currentUser.id, passwordHash);
+
+    return true;
+  }
+
+  private async validateUpdateProfileInput(
+    input: UpdateProfileInput,
+  ): Promise<UpdateProfileInput> {
+    const dto = plainToInstance(UpdateProfileInput, input, {
+      enableImplicitConversion: true,
+    });
+    const errors = await validate(dto);
+
+    if (errors.length > 0) {
+      throw new BadRequestException(errors);
+    }
+
+    return dto;
+  }
+
+  private async validateChangePasswordInput(
+    input: ChangePasswordInput,
+  ): Promise<ChangePasswordInput> {
+    const dto = plainToInstance(ChangePasswordInput, input, {
+      enableImplicitConversion: true,
+    });
+    const errors = await validate(dto);
+
+    if (errors.length > 0) {
+      throw new BadRequestException(errors);
+    }
+
+    return dto;
   }
 
   private async validateRegisterInput(

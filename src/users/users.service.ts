@@ -99,6 +99,93 @@ export class UsersService {
     return user ? this.toUserModel(user) : null;
   }
 
+  async findByIdWithPasswordHash(
+    id: string,
+  ): Promise<UserWithPasswordHash | null> {
+    if (!isValidObjectId(id)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const user = await this.userModel.findById(id).select('+passwordHash').exec();
+
+    if (!user?.passwordHash) {
+      return null;
+    }
+
+    return {
+      user: this.toUserModel(user),
+      passwordHash: user.passwordHash,
+    };
+  }
+
+  async updateProfile(
+    userId: string,
+    updates: {
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+    },
+  ): Promise<UserModel> {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    if (updates.email !== undefined) {
+      const normalizedEmail = updates.email.trim().toLowerCase();
+      if (!normalizedEmail) {
+        throw new BadRequestException('Email is required');
+      }
+
+      if (normalizedEmail !== user.email) {
+        const existing = await this.userModel
+          .findOne({ email: normalizedEmail })
+          .exec();
+        if (existing && existing._id.toString() !== userId) {
+          throw new ConflictException('A user with this email already exists');
+        }
+        user.email = normalizedEmail;
+      }
+    }
+
+    if (updates.firstName !== undefined) {
+      user.firstName = updates.firstName;
+    }
+
+    if (updates.lastName !== undefined) {
+      user.lastName = updates.lastName;
+    }
+
+    try {
+      await user.save();
+      return this.toUserModel(user);
+    } catch (error: unknown) {
+      if (this.isDuplicateKeyError(error)) {
+        throw new ConflictException('A user with this email already exists');
+      }
+
+      throw new InternalServerErrorException('Failed to update profile');
+    }
+  }
+
+  async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const result = await this.userModel
+      .updateOne({ _id: userId }, { passwordHash })
+      .exec();
+
+    if (result.matchedCount === 0) {
+      throw new BadRequestException('User not found');
+    }
+  }
+
   private async validateCreateUserInput(
     input: CreateUserDto,
   ): Promise<CreateUserDto> {
