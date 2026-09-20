@@ -96,7 +96,9 @@ function formatValidationFailure(
   errors: ReturnType<typeof validateSync>,
 ): string {
   const requiredKeys = ['MONGODB_URI', 'JWT_SECRET'] as const;
-  const missing = requiredKeys.filter((key) => !pickNonEmptyString(config, key));
+  const missing = requiredKeys.filter(
+    (key) => !pickNonEmptyString(config, key),
+  );
 
   const hints: string[] = [];
   if (missing.includes('MONGODB_URI')) {
@@ -110,8 +112,7 @@ function formatValidationFailure(
     );
   }
 
-  const hintBlock =
-    hints.length > 0 ? ` Deployment: ${hints.join(' ')}` : '';
+  const hintBlock = hints.length > 0 ? ` Deployment: ${hints.join(' ')}` : '';
 
   return `Environment configuration is invalid.${hintBlock} Details: ${errors.toString()}`;
 }
