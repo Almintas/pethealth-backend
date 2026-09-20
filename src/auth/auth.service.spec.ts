@@ -11,6 +11,7 @@ import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 import { LoginInput } from './dto/login.input';
 import { RegisterInput } from './dto/register.input';
+import { UpdateNotificationPreferencesInput } from './dto/update-notification-preferences.input';
 import { PasswordService } from './password.service';
 
 describe('AuthService', () => {
@@ -20,6 +21,7 @@ describe('AuthService', () => {
     findByEmail: jest.fn(),
     findByEmailWithPasswordHash: jest.fn(),
     createUser: jest.fn(),
+    updateNotificationPreferences: jest.fn(),
   };
 
   const passwordServiceMock = {
@@ -39,6 +41,11 @@ describe('AuthService', () => {
     role: UserRole.USER,
     createdAt: new Date('2024-01-01T00:00:00.000Z'),
     updatedAt: new Date('2024-01-02T00:00:00.000Z'),
+    notificationPreferences: {
+      emailAppointmentReminders: true,
+      emailMedicationReminders: true,
+      emailVaccinationReminders: true,
+    },
   };
 
   beforeEach(async () => {
@@ -182,6 +189,38 @@ describe('AuthService', () => {
         UnauthorizedException,
       );
       expect(jwtServiceMock.sign).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateNotificationPreferences', () => {
+    const input: UpdateNotificationPreferencesInput = {
+      emailAppointmentReminders: false,
+    };
+
+    it('updates notification preferences for the current user', async () => {
+      const updatedUser = {
+        ...registeredUser,
+        notificationPreferences: {
+          ...registeredUser.notificationPreferences,
+          emailAppointmentReminders: false,
+        },
+      };
+      usersServiceMock.updateNotificationPreferences.mockResolvedValue(
+        updatedUser,
+      );
+
+      const result = await service.updateNotificationPreferences(
+        registeredUser,
+        input,
+      );
+
+      expect(usersServiceMock.updateNotificationPreferences).toHaveBeenCalledWith(
+        registeredUser.id,
+        { emailAppointmentReminders: false },
+      );
+      expect(result.notificationPreferences.emailAppointmentReminders).toBe(
+        false,
+      );
     });
   });
 });

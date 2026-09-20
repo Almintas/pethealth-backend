@@ -1,6 +1,7 @@
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { GraphQLModule } from '@nestjs/graphql';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -22,6 +23,7 @@ import { AppointmentsModule } from './appointments/appointments.module';
 import { MedicationsModule } from './medications/medications.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { VaccinationsModule } from './vaccinations/vaccinations.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 function resolveGraphqlSchemaPath(): string {
   const candidates = [
@@ -46,6 +48,7 @@ function resolveGraphqlSchemaPath(): string {
       expandVariables: true,
       validate,
     }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) =>
@@ -87,6 +90,7 @@ function resolveGraphqlSchemaPath(): string {
     MedicationsModule,
     AppointmentsModule,
     RemindersModule,
+    NotificationsModule,
   ],
   providers: [
     {

@@ -12,7 +12,9 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UserRole } from './enums/user-role.enum';
 import { CreateUserOptions } from './interfaces/create-user-options.interface';
 import { UserWithPasswordHash } from './interfaces/user-with-password-hash.interface';
+import { NotificationPreferencesModel } from './models/notification-preferences.model';
 import { UserModel } from './models/user.model';
+import { resolveNotificationPreferences } from './notification-preferences.util';
 import { User, UserDocument } from './schemas/user.schema';
 
 @Injectable()
@@ -172,6 +174,34 @@ export class UsersService {
     }
   }
 
+  async updateNotificationPreferences(
+    userId: string,
+    updates: Partial<NotificationPreferencesModel>,
+  ): Promise<UserModel> {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    const current = resolveNotificationPreferences(user.notificationPreferences);
+
+    user.notificationPreferences = {
+      emailAppointmentReminders:
+        updates.emailAppointmentReminders ?? current.emailAppointmentReminders,
+      emailMedicationReminders:
+        updates.emailMedicationReminders ?? current.emailMedicationReminders,
+      emailVaccinationReminders:
+        updates.emailVaccinationReminders ?? current.emailVaccinationReminders,
+    };
+
+    await user.save();
+    return this.toUserModel(user);
+  }
+
   async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
     if (!isValidObjectId(userId)) {
       throw new BadRequestException('Invalid user id');
@@ -210,6 +240,9 @@ export class UsersService {
       role: document.role,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
+      notificationPreferences: resolveNotificationPreferences(
+        document.notificationPreferences,
+      ),
     };
   }
 

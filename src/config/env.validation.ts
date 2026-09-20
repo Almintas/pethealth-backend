@@ -69,6 +69,26 @@ export class EnvironmentVariables {
   @Min(1000)
   @IsOptional()
   THROTTLE_AUTH_TTL_MS?: number;
+
+  /** Resend API key for transactional email (backend only). */
+  @IsString()
+  @IsOptional()
+  RESEND_API_KEY?: string;
+
+  /** Resend sender identity, e.g. PetHealth <notifications@your-domain.com> */
+  @IsString()
+  @IsOptional()
+  RESEND_FROM_EMAIL?: string;
+
+  /** Public frontend URL for links in emails. */
+  @IsString()
+  @IsOptional()
+  FRONTEND_URL?: string;
+
+  /** When true and not production, allows sendTestNotificationEmail mutation. */
+  @IsString()
+  @IsOptional()
+  ENABLE_DEV_EMAIL_TEST?: string;
 }
 
 function assertJwtSecretPolicy(nodeEnv: Environment, jwtSecret: string): void {

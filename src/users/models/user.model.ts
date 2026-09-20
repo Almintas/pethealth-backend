@@ -1,5 +1,6 @@
 import { Field, GraphQLISODateTime, ID, ObjectType } from '@nestjs/graphql';
 import { UserRole } from '../enums/user-role.enum';
+import { NotificationPreferencesModel } from './notification-preferences.model';
 
 @ObjectType({ description: 'Application user' })
 export class UserModel {
@@ -23,4 +24,9 @@ export class UserModel {
 
   @Field(() => GraphQLISODateTime, { description: 'Last update time' })
   updatedAt!: Date;
+
+  @Field(() => NotificationPreferencesModel, {
+    description: 'Email notification preferences',
+  })
+  notificationPreferences!: NotificationPreferencesModel;
 }

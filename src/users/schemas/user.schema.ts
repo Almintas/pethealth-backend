@@ -1,6 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 import { UserRole } from '../enums/user-role.enum';
+import {
+  NotificationPreferences,
+  NotificationPreferencesSchema,
+} from './notification-preferences.schema';
 
 export type UserDocument = HydratedDocument<User>;
 
@@ -33,6 +37,12 @@ export class User {
 
   @Prop({ select: false })
   passwordHash?: string;
+
+  @Prop({
+    type: NotificationPreferencesSchema,
+    default: () => ({}),
+  })
+  notificationPreferences!: NotificationPreferences;
 
   createdAt!: Date;
 
