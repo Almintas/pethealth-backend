@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
+import { Pet, PetSchema } from '../pets/schemas/pet.schema';
 import { PetsModule } from '../pets/pets.module';
 import { MedicalRecordsResolver } from './medical-records.resolver';
 import { MedicalRecordsService } from './medical-records.service';
@@ -15,6 +16,7 @@ import {
     PetsModule,
     MongooseModule.forFeature([
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
+      { name: Pet.name, schema: PetSchema },
     ]),
   ],
   providers: [MedicalRecordsService, MedicalRecordsResolver],

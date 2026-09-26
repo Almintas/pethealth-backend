@@ -214,10 +214,11 @@ describe('AuthService', () => {
         input,
       );
 
-      expect(usersServiceMock.updateNotificationPreferences).toHaveBeenCalledWith(
-        registeredUser.id,
-        { emailAppointmentReminders: false },
-      );
+      expect(
+        usersServiceMock.updateNotificationPreferences,
+      ).toHaveBeenCalledWith(registeredUser.id, {
+        emailAppointmentReminders: false,
+      });
       expect(result.notificationPreferences.emailAppointmentReminders).toBe(
         false,
       );

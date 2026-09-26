@@ -93,7 +93,10 @@ export class NotificationDeliveryService {
     }
   }
 
-  async markSent(deliveryKey: string, providerMessageId: string): Promise<void> {
+  async markSent(
+    deliveryKey: string,
+    providerMessageId: string,
+  ): Promise<void> {
     await this.deliveryModel
       .updateOne(
         { deliveryKey },

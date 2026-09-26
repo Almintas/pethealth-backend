@@ -53,6 +53,7 @@ describe('env validation', () => {
       NODE_ENV: Environment.Production,
       CORS_ORIGIN: 'https://app.example.com',
       JWT_SECRET: 'a'.repeat(32),
+      OWNER_SERVICE_SECRET: 'b'.repeat(32),
     });
 
     expect(result.NODE_ENV).toBe(Environment.Production);

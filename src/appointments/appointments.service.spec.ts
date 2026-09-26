@@ -7,6 +7,7 @@ import { CreateAppointmentInput } from './dto/create-appointment.input';
 import { UpdateAppointmentInput } from './dto/update-appointment.input';
 import { AppointmentStatus } from './enums/appointment-status.enum';
 import { AppointmentsService } from './appointments.service';
+import { Pet } from '../pets/schemas/pet.schema';
 import { Appointment } from './schemas/appointment.schema';
 
 describe('AppointmentsService', () => {
@@ -29,6 +30,10 @@ describe('AppointmentsService', () => {
     create: jest.fn(),
     find: jest.fn(),
     findById: jest.fn(),
+  };
+
+  const petModelMock = {
+    findOne: jest.fn(),
   };
 
   const buildAppointmentDocument = (
@@ -55,6 +60,10 @@ describe('AppointmentsService', () => {
         {
           provide: getModelToken(Appointment.name),
           useValue: appointmentModelMock,
+        },
+        {
+          provide: getModelToken(Pet.name),
+          useValue: petModelMock,
         },
         {
           provide: PetOwnershipService,
@@ -241,6 +250,36 @@ describe('AppointmentsService', () => {
       await expect(
         service.updateAppointment(ownerId, appointmentId, {}),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('findAppointmentsByPetIds', () => {
+    it('returns appointments scheduled inside the requested window', async () => {
+      const document = buildAppointmentDocument(petId);
+      document.scheduledAt = new Date('2026-09-26T15:00:00.000Z');
+      const exec = jest.fn().mockResolvedValue([document]);
+      appointmentModelMock.find.mockReturnValue({
+        sort: jest.fn().mockReturnValue({ exec }),
+      });
+
+      const scheduledFrom = new Date('2026-09-26T00:00:00.000Z');
+      const scheduledTo = new Date('2026-09-26T23:59:59.999Z');
+      const appointments = await service.findAppointmentsByPetIds([petId], {
+        scheduledFrom,
+        scheduledTo,
+      });
+
+      expect(appointments).toHaveLength(1);
+      expect(appointments[0]?.scheduledAt.toISOString()).toBe(
+        '2026-09-26T15:00:00.000Z',
+      );
+      expect(appointmentModelMock.find).toHaveBeenCalledWith({
+        petId: { $in: [new Types.ObjectId(petId)] },
+        scheduledAt: {
+          $gte: scheduledFrom,
+          $lte: scheduledTo,
+        },
+      });
     });
   });
 

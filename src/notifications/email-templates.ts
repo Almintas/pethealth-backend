@@ -149,9 +149,11 @@ export function buildVaccinationReminderEmail(params: {
   };
 }
 
-export function buildTestEmail(params: {
-  userName: string;
-}): { subject: string; html: string; text: string } {
+export function buildTestEmail(params: { userName: string }): {
+  subject: string;
+  html: string;
+  text: string;
+} {
   const bodyHtml = `
     <p>Hi ${escapeHtml(params.userName)},</p>
     <p>This is a test email from your PetHealth development environment. If you received this message, Resend is configured correctly.</p>

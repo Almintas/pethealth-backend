@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
-import { validate } from 'class-validator';
+import { isEmail, validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UserRole } from './enums/user-role.enum';
@@ -108,7 +108,10 @@ export class UsersService {
       throw new BadRequestException('Invalid user id');
     }
 
-    const user = await this.userModel.findById(id).select('+passwordHash').exec();
+    const user = await this.userModel
+      .findById(id)
+      .select('+passwordHash')
+      .exec();
 
     if (!user?.passwordHash) {
       return null;
@@ -118,6 +121,61 @@ export class UsersService {
       user: this.toUserModel(user),
       passwordHash: user.passwordHash,
     };
+  }
+
+  static readonly OWNER_EMAIL_IN_USE_MESSAGE =
+    'Email is already associated with another account.';
+
+  /**
+   * Updates canonical Owner identity for Vet integration. Validates email
+   * conflicts before mutating any profile fields (atomic).
+   */
+  async updateOwnerProfileForVetIntegration(
+    userId: string,
+    input: { firstName: string; lastName: string; email: string },
+  ): Promise<UserModel> {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const normalizedEmail = input.email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      throw new BadRequestException('Email is required');
+    }
+    if (!isEmail(normalizedEmail)) {
+      throw new BadRequestException('Invalid email address');
+    }
+
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    if (normalizedEmail !== user.email) {
+      const existing = await this.userModel
+        .findOne({ email: normalizedEmail })
+        .exec();
+      if (existing && existing._id.toString() !== userId) {
+        throw new ConflictException(UsersService.OWNER_EMAIL_IN_USE_MESSAGE);
+      }
+    }
+
+    user.firstName = input.firstName.trim();
+    user.lastName = input.lastName.trim();
+    if (normalizedEmail !== user.email) {
+      user.email = normalizedEmail;
+    }
+
+    try {
+      await user.save();
+      return this.toUserModel(user);
+    } catch (error: unknown) {
+      if (this.isDuplicateKeyError(error)) {
+        throw new ConflictException(UsersService.OWNER_EMAIL_IN_USE_MESSAGE);
+      }
+
+      throw new InternalServerErrorException('Failed to update profile');
+    }
   }
 
   async updateProfile(
@@ -187,7 +245,9 @@ export class UsersService {
       throw new BadRequestException('User not found');
     }
 
-    const current = resolveNotificationPreferences(user.notificationPreferences);
+    const current = resolveNotificationPreferences(
+      user.notificationPreferences,
+    );
 
     user.notificationPreferences = {
       emailAppointmentReminders:
@@ -202,7 +262,10 @@ export class UsersService {
     return this.toUserModel(user);
   }
 
-  async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
+  async updatePasswordHash(
+    userId: string,
+    passwordHash: string,
+  ): Promise<void> {
     if (!isValidObjectId(userId)) {
       throw new BadRequestException('Invalid user id');
     }

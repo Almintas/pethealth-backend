@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
+import { Pet } from '../pets/schemas/pet.schema';
 import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateVaccinationInput } from './dto/create-vaccination.input';
 import { UpdateVaccinationInput } from './dto/update-vaccination.input';
@@ -29,6 +30,12 @@ describe('VaccinationsService', () => {
     create: jest.fn(),
     find: jest.fn(),
     findById: jest.fn(),
+    findOne: jest.fn(),
+    countDocuments: jest.fn(),
+  };
+
+  const petModelMock = {
+    findOne: jest.fn(),
   };
 
   const buildVaccinationDocument = (pet: string) => ({
@@ -57,10 +64,17 @@ describe('VaccinationsService', () => {
           provide: PetOwnershipService,
           useValue: petOwnershipServiceMock,
         },
+        {
+          provide: getModelToken(Pet.name),
+          useValue: petModelMock,
+        },
       ],
     }).compile();
 
     service = module.get<VaccinationsService>(VaccinationsService);
+    petModelMock.findOne.mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ _id: new Types.ObjectId(petId) }),
+    });
   });
 
   it('should be defined', () => {
@@ -241,6 +255,62 @@ describe('VaccinationsService', () => {
 
       await expect(
         service.updateVaccination(ownerId, vaccinationId, {
+          administeredAt: new Date('2025-06-01T00:00:00.000Z'),
+          nextDueAt: new Date('2025-01-01T00:00:00.000Z'),
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('findVaccinationsPageForService', () => {
+    it('returns a paginated page sorted by administered date', async () => {
+      const document = buildVaccinationDocument(petId);
+      vaccinationModelMock.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(1),
+      });
+      vaccinationModelMock.find.mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          skip: jest.fn().mockReturnValue({
+            limit: jest.fn().mockReturnValue({
+              exec: jest.fn().mockResolvedValue([document]),
+            }),
+          }),
+        }),
+      });
+      vaccinationModelMock.findOne.mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(document),
+        }),
+      });
+
+      const page = await service.findVaccinationsPageForService(petId, {
+        page: 1,
+        limit: 5,
+      });
+
+      expect(page.items).toHaveLength(1);
+      expect(page.nextDueVaccineName).toBe('Rabies');
+    });
+  });
+
+  describe('createVaccinationForService', () => {
+    it('creates a vaccination for an active pet', async () => {
+      const document = buildVaccinationDocument(petId);
+      vaccinationModelMock.create.mockResolvedValue(document);
+
+      const result = await service.createVaccinationForService(petId, {
+        vaccineName: 'Rabies',
+        administeredAt,
+      });
+
+      expect(result.id).toBe(vaccinationId);
+    });
+  });
+
+  describe('updateVaccinationForService', () => {
+    it('rejects next due before administered date', async () => {
+      await expect(
+        service.updateVaccinationForService(vaccinationId, {
           administeredAt: new Date('2025-06-01T00:00:00.000Z'),
           nextDueAt: new Date('2025-01-01T00:00:00.000Z'),
         }),

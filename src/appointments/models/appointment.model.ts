@@ -17,6 +17,12 @@ export class AppointmentModel {
   @Field(() => String, { description: 'Appointment type' })
   type!: string;
 
+  @Field(() => String, {
+    description: 'Vet workspace clinic id when scheduled by a clinic',
+    nullable: true,
+  })
+  vetClinicId?: string;
+
   @Field(() => String, { description: 'Clinic name', nullable: true })
   clinicName?: string;
 

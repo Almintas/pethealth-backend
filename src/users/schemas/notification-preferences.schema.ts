@@ -12,8 +12,9 @@ export class NotificationPreferences {
   emailVaccinationReminders!: boolean;
 }
 
-export const NotificationPreferencesSchema =
-  SchemaFactory.createForClass(NotificationPreferences);
+export const NotificationPreferencesSchema = SchemaFactory.createForClass(
+  NotificationPreferences,
+);
 
 export const DEFAULT_NOTIFICATION_PREFERENCES = {
   emailAppointmentReminders: true,

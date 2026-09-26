@@ -204,4 +204,96 @@ describe('UsersService', () => {
       );
     });
   });
+
+  describe('updateOwnerProfileForVetIntegration', () => {
+    const userId = '507f1f77bcf86cd799439011';
+
+    function mockMutableUser(overrides: Record<string, unknown> = {}) {
+      const user = {
+        _id: { toString: () => userId },
+        email: 'jane@example.com',
+        firstName: 'Jane',
+        lastName: 'Doe',
+        role: UserRole.USER,
+        createdAt: new Date('2024-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2024-01-02T00:00:00.000Z'),
+        save: jest.fn().mockResolvedValue(undefined),
+        ...overrides,
+      };
+      userModelMock.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(user),
+      });
+      return user;
+    }
+
+    it('updates first name, last name, and normalized email', async () => {
+      const user = mockMutableUser();
+      userModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      });
+
+      const result = await service.updateOwnerProfileForVetIntegration(userId, {
+        firstName: 'Janet',
+        lastName: 'Ownerson',
+        email: '  JANET@Example.COM ',
+      });
+
+      expect(user.firstName).toBe('Janet');
+      expect(user.lastName).toBe('Ownerson');
+      expect(user.email).toBe('janet@example.com');
+      expect(user.save).toHaveBeenCalled();
+      expect(result.email).toBe('janet@example.com');
+    });
+
+    it('allows keeping the same email', async () => {
+      const user = mockMutableUser();
+      userModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      });
+
+      await service.updateOwnerProfileForVetIntegration(userId, {
+        firstName: 'Jane',
+        lastName: 'Doe',
+        email: 'jane@example.com',
+      });
+
+      expect(userModelMock.findOne).not.toHaveBeenCalled();
+      expect(user.save).toHaveBeenCalled();
+    });
+
+    it('rejects invalid email', async () => {
+      mockMutableUser();
+
+      await expect(
+        service.updateOwnerProfileForVetIntegration(userId, {
+          firstName: 'Jane',
+          lastName: 'Doe',
+          email: 'not-an-email',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects email already used by another account', async () => {
+      const user = mockMutableUser();
+      userModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          _id: { toString: () => 'other-user-id' },
+          email: 'taken@example.com',
+        }),
+      });
+
+      await expect(
+        service.updateOwnerProfileForVetIntegration(userId, {
+          firstName: 'Janet',
+          lastName: 'Ownerson',
+          email: 'taken@example.com',
+        }),
+      ).rejects.toThrow(UsersService.OWNER_EMAIL_IN_USE_MESSAGE);
+
+      expect(user.firstName).toBe('Jane');
+      expect(user.lastName).toBe('Doe');
+      expect(user.email).toBe('jane@example.com');
+      expect(user.save).not.toHaveBeenCalled();
+    });
+  });
 });

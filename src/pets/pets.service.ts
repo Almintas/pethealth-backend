@@ -96,6 +96,15 @@ export class PetsService {
     return this.toPetModel(pet);
   }
 
+  async updateActivePetForService(
+    petId: string,
+    input: UpdatePetInput,
+  ): Promise<PetModel> {
+    const dto = await this.validateUpdatePetInput(input);
+    const pet = await this.findActivePetDocumentById(petId);
+    return this.applyPetUpdate(pet, dto);
+  }
+
   async updatePet(
     ownerId: string,
     petId: string,
@@ -103,7 +112,13 @@ export class PetsService {
   ): Promise<PetModel> {
     const dto = await this.validateUpdatePetInput(input);
     const pet = await this.findOwnedPetDocument(ownerId, petId);
+    return this.applyPetUpdate(pet, dto);
+  }
 
+  private async applyPetUpdate(
+    pet: PetDocument,
+    dto: UpdatePetInput,
+  ): Promise<PetModel> {
     if (dto.name !== undefined) {
       pet.name = dto.name;
     }
@@ -215,6 +230,25 @@ export class PetsService {
       this.appointmentModel.deleteMany({ petId: petObjectId }).exec(),
       this.reminderModel.deleteMany({ petId: petObjectId }).exec(),
     ]);
+  }
+
+  private async findActivePetDocumentById(petId: string): Promise<PetDocument> {
+    if (!isValidObjectId(petId)) {
+      throw new NotFoundException('Pet not found');
+    }
+
+    const pet = await this.petModel
+      .findOne({
+        _id: new Types.ObjectId(petId),
+        ...ACTIVE_PET_FILTER,
+      })
+      .exec();
+
+    if (!pet) {
+      throw new NotFoundException('Pet not found');
+    }
+
+    return pet;
   }
 
   private async findOwnedPetDocument(

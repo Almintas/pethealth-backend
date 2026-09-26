@@ -10,7 +10,10 @@ import {
 import { Pet, PetDocument } from '../pets/schemas/pet.schema';
 import { ReminderStatus } from '../reminders/enums/reminder-status.enum';
 import { ReminderType } from '../reminders/enums/reminder-type.enum';
-import { Reminder, ReminderDocument } from '../reminders/schemas/reminder.schema';
+import {
+  Reminder,
+  ReminderDocument,
+} from '../reminders/schemas/reminder.schema';
 import { resolveNotificationPreferences } from '../users/notification-preferences.util';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { EmailService } from './email.service';
@@ -108,7 +111,9 @@ export class NotificationEmailDispatcher {
         continue;
       }
 
-      const prefs = resolveNotificationPreferences(user.notificationPreferences);
+      const prefs = resolveNotificationPreferences(
+        user.notificationPreferences,
+      );
       if (!prefs.emailAppointmentReminders) {
         continue;
       }
@@ -188,7 +193,9 @@ export class NotificationEmailDispatcher {
         continue;
       }
 
-      const prefs = resolveNotificationPreferences(user.notificationPreferences);
+      const prefs = resolveNotificationPreferences(
+        user.notificationPreferences,
+      );
       const enabled =
         reminderType === ReminderType.MEDICATION
           ? prefs.emailMedicationReminders
@@ -277,7 +284,10 @@ export class NotificationEmailDispatcher {
       });
 
       if (result.ok) {
-        await this.deliveryService.markSent(params.deliveryKey, result.messageId);
+        await this.deliveryService.markSent(
+          params.deliveryKey,
+          result.messageId,
+        );
         return;
       }
 
@@ -287,7 +297,9 @@ export class NotificationEmailDispatcher {
       );
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : 'Unexpected email dispatch error';
+        error instanceof Error
+          ? error.message
+          : 'Unexpected email dispatch error';
       this.logger.error(`Notification dispatch failed: ${message}`);
       await this.deliveryService.markFailed(params.deliveryKey, message);
     }
