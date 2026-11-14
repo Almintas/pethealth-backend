@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomBytes } from 'node:crypto';
 import { Model, Types } from 'mongoose';
+import { isProductionEnvironment } from '../../config/environment.util';
 import { buildAccountActivationEmail } from '../../notifications/email-templates';
 import { EmailService } from '../../notifications/email.service';
 import { UserRole } from '../../users/enums/user-role.enum';
@@ -89,11 +90,13 @@ export class AccountActivationService {
       const frontendUrl = (
         this.configService.get<string>('FRONTEND_URL') ?? ''
       ).replace(/\/+$/, '');
+      const activationUrl = `${frontendUrl}/activate-account?token=${encodeURIComponent(token)}`;
       const message = buildAccountActivationEmail({
         firstName: account.user.firstName,
-        activationUrl: `${frontendUrl}/activate-account?token=${encodeURIComponent(token)}`,
+        activationUrl,
         clinicName,
       });
+      this.logDevelopmentActivationLink(account.user.email, activationUrl);
       const result = await this.emailService.send({
         to: account.user.email,
         ...message,
@@ -109,6 +112,26 @@ export class AccountActivationService {
       this.logger.error(`Failed to prepare activation email: ${message}`);
       return false;
     }
+  }
+
+  /**
+   * Local development usually has no email provider, which would make
+   * clinic-created accounts impossible to activate. Outside production, log
+   * the link instead when email is not configured.
+   */
+  private logDevelopmentActivationLink(
+    email: string,
+    activationUrl: string,
+  ): void {
+    if (
+      this.emailService.isConfigured() ||
+      isProductionEnvironment(this.configService.get<string>('NODE_ENV'))
+    ) {
+      return;
+    }
+    this.logger.log(
+      `Email is not configured; activation link for ${email}: ${activationUrl}`,
+    );
   }
 
   async activate(token: string, password: string): Promise<AuthPayload> {

@@ -181,8 +181,9 @@ describe('PetHealth GraphQL (e2e)', () => {
     process.env.OWNER_SERVICE_SECRET = E2E_SERVICE_SECRET;
 
     /* AppModule is imported dynamically so test env vars exist before ConfigModule validation runs. */
-    const appModule =
-      (await import('../src/app.module')) as typeof import('../src/app.module');
+    const appModule = (await import(
+      '../src/app.module'
+    )) as typeof import('../src/app.module');
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [appModule.AppModule],
     }).compile();
