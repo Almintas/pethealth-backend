@@ -1,8 +1,10 @@
+import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 import { PetsService } from '../pets/pets.service';
 import { Pet } from '../pets/schemas/pet.schema';
+import { UserRole } from '../users/enums/user-role.enum';
 import { UsersService } from '../users/users.service';
 import { InternalPetsService } from './internal-pets.service';
 
@@ -19,6 +21,7 @@ describe('InternalPetsService', () => {
   const usersService = {
     findById: jest.fn(),
     findByEmail: jest.fn(),
+    findAccountStateByEmail: jest.fn(),
     createUser: jest.fn(),
     updateProfile: jest.fn(),
     updateOwnerProfileForVetIntegration: jest.fn(),
@@ -89,12 +92,16 @@ describe('InternalPetsService', () => {
     expect(result).toHaveLength(0);
   });
 
-  it('registers a pet for an existing owner email', async () => {
-    usersService.findByEmail.mockResolvedValue({
-      id: ownerId.toString(),
-      firstName: 'Jane',
-      lastName: 'Owner',
-      email: 'jane@example.com',
+  it('registers a pet for an existing unclaimed placeholder owner', async () => {
+    usersService.findAccountStateByEmail.mockResolvedValue({
+      user: {
+        id: ownerId.toString(),
+        firstName: 'Jane',
+        lastName: 'Owner',
+        email: 'jane@example.com',
+        role: UserRole.USER,
+      },
+      isClaimed: false,
     });
     petsService.createPet.mockResolvedValue({
       id: petId.toString(),
@@ -136,6 +143,87 @@ describe('InternalPetsService', () => {
       birthDate: undefined,
     });
     expect(result.name).toBe('Luna');
+  });
+
+  it('refuses to attach a pet to a claimed owner account', async () => {
+    usersService.findAccountStateByEmail.mockResolvedValue({
+      user: {
+        id: ownerId.toString(),
+        firstName: 'Jane',
+        lastName: 'Owner',
+        email: 'jane@example.com',
+        role: UserRole.USER,
+      },
+      isClaimed: true,
+    });
+
+    await expect(
+      service.registerPetForVet({
+        owner: {
+          email: 'jane@example.com',
+          firstName: 'Jane',
+          lastName: 'Owner',
+        },
+        name: 'Luna',
+        species: 'Cat',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(petsService.createPet).not.toHaveBeenCalled();
+  });
+
+  it('refuses to attach a pet to a non-owner account', async () => {
+    usersService.findAccountStateByEmail.mockResolvedValue({
+      user: {
+        id: ownerId.toString(),
+        firstName: 'Vera',
+        lastName: 'Vet',
+        email: 'vet@example.com',
+        role: UserRole.VET,
+      },
+      isClaimed: false,
+    });
+
+    await expect(
+      service.registerPetForVet({
+        owner: { email: 'vet@example.com', firstName: 'Vera', lastName: 'Vet' },
+        name: 'Luna',
+        species: 'Cat',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(petsService.createPet).not.toHaveBeenCalled();
+  });
+
+  it('creates a placeholder owner when the email is new', async () => {
+    usersService.findAccountStateByEmail.mockResolvedValue(null);
+    usersService.createUser.mockResolvedValue({ id: ownerId.toString() });
+    petsService.createPet.mockResolvedValue({ id: petId.toString() });
+    petModel.find.mockReturnValue({
+      exec: jest
+        .fn()
+        .mockResolvedValue([
+          { _id: petId, ownerId, name: 'Luna', species: 'Cat' },
+        ]),
+    });
+    usersService.findById.mockResolvedValue({
+      id: ownerId.toString(),
+      firstName: 'New',
+      lastName: 'Owner',
+      email: 'new@example.com',
+    });
+
+    await service.registerPetForVet({
+      owner: { email: 'new@example.com', firstName: 'New', lastName: 'Owner' },
+      name: 'Luna',
+      species: 'Cat',
+    });
+
+    expect(usersService.createUser).toHaveBeenCalledWith({
+      email: 'new@example.com',
+      firstName: 'New',
+      lastName: 'Owner',
+      role: UserRole.USER,
+    });
+    expect(petsService.createPet).toHaveBeenCalled();
   });
 
   it('updates owner first and last name for a pet via canonical owner profile', async () => {

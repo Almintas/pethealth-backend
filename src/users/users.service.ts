@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
@@ -126,9 +127,43 @@ export class UsersService {
   static readonly OWNER_EMAIL_IN_USE_MESSAGE =
     'Email is already associated with another account.';
 
+  static readonly OWNER_PROFILE_MANAGED_BY_OWNER_MESSAGE =
+    'This owner manages their own account. Ask the owner to update their profile in the PetHealth app.';
+
   /**
-   * Updates canonical Owner identity for Vet integration. Validates email
-   * conflicts before mutating any profile fields (atomic).
+   * Looks up an account by email for Vet integration and reports whether it has
+   * been claimed (the owner has set a password and can sign in themselves).
+   */
+  async findAccountStateByEmail(
+    email: string,
+  ): Promise<{ user: UserModel; isClaimed: boolean } | null> {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      throw new BadRequestException('Email is required');
+    }
+
+    const user = await this.userModel
+      .findOne({ email: normalizedEmail })
+      .select('+passwordHash')
+      .exec();
+    if (!user) {
+      return null;
+    }
+
+    return {
+      user: this.toUserModel(user),
+      isClaimed: Boolean(user.passwordHash),
+    };
+  }
+
+  /**
+   * Updates canonical Owner identity for Vet integration.
+   *
+   * Security: a clinic may only edit placeholder owner accounts it created
+   * (no password set, role USER). Claimed accounts belong to the owner — a
+   * clinic must never change their name or sign-in email, otherwise any
+   * clinic user could take over an owner's account. An unchanged payload is
+   * accepted as a no-op so clinics can still save other patient fields.
    */
   async updateOwnerProfileForVetIntegration(
     userId: string,
@@ -146,9 +181,29 @@ export class UsersService {
       throw new BadRequestException('Invalid email address');
     }
 
-    const user = await this.userModel.findById(userId).exec();
+    const user = await this.userModel
+      .findById(userId)
+      .select('+passwordHash')
+      .exec();
     if (!user) {
       throw new BadRequestException('User not found');
+    }
+
+    const firstName = input.firstName.trim();
+    const lastName = input.lastName.trim();
+    const isUnchanged =
+      firstName === user.firstName &&
+      lastName === user.lastName &&
+      normalizedEmail === user.email;
+
+    if (isUnchanged) {
+      return this.toUserModel(user);
+    }
+
+    if (user.role !== UserRole.USER || user.passwordHash) {
+      throw new ForbiddenException(
+        UsersService.OWNER_PROFILE_MANAGED_BY_OWNER_MESSAGE,
+      );
     }
 
     if (normalizedEmail !== user.email) {
@@ -160,8 +215,8 @@ export class UsersService {
       }
     }
 
-    user.firstName = input.firstName.trim();
-    user.lastName = input.lastName.trim();
+    user.firstName = firstName;
+    user.lastName = lastName;
     if (normalizedEmail !== user.email) {
       user.email = normalizedEmail;
     }

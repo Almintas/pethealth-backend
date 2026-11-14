@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, isValidObjectId } from 'mongoose';
 import { CreatePetInput } from '../pets/dto/create-pet.input';
@@ -146,12 +150,28 @@ export class InternalPetsService {
     return pet;
   }
 
+  static readonly EXISTING_OWNER_ACCOUNT_MESSAGE =
+    'An owner account with this email already exists. The owner must add the pet in the PetHealth app and grant your clinic access.';
+
+  /**
+   * Security: a clinic may attach a new pet only to a brand-new placeholder
+   * owner or to an unclaimed placeholder created earlier by a clinic. Pets are
+   * never silently added to an account the owner has claimed, and never to
+   * VET/ADMIN accounts.
+   */
   private async resolveOwnerIdForVetRegistration(
     owner: InternalRegisterPetForVetInput['owner'],
   ): Promise<string> {
-    const existing = await this.usersService.findByEmail(owner.email);
+    const existing = await this.usersService.findAccountStateByEmail(
+      owner.email,
+    );
     if (existing) {
-      return existing.id;
+      if (existing.isClaimed || existing.user.role !== UserRole.USER) {
+        throw new ConflictException(
+          InternalPetsService.EXISTING_OWNER_ACCOUNT_MESSAGE,
+        );
+      }
+      return existing.user.id;
     }
 
     const created = await this.usersService.createUser({
