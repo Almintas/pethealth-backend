@@ -149,6 +149,38 @@ export function buildVaccinationReminderEmail(params: {
   };
 }
 
+export function buildAccountActivationEmail(params: {
+  firstName: string;
+  activationUrl: string;
+  clinicName?: string;
+}): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const clinicLine = params.clinicName
+    ? `${escapeHtml(params.clinicName)} has added your pet to PetHealth.`
+    : 'Your veterinary clinic has added your pet to PetHealth.';
+  const bodyHtml = `
+    <p>Hi ${escapeHtml(params.firstName)},</p>
+    <p>${clinicLine} Activate your account to see your pet's medical records, vaccinations, medications and appointments, and to control which clinics can access them.</p>
+    <p>The link is valid for 72 hours. If you did not expect this email, you can ignore it.</p>
+  `;
+
+  const { html, text } = layout({
+    title: 'Activate your PetHealth account',
+    bodyHtml,
+    ctaLabel: 'Activate account',
+    ctaUrl: params.activationUrl,
+  });
+
+  return {
+    subject: 'Activate your PetHealth account',
+    html,
+    text,
+  };
+}
+
 export function buildTestEmail(params: { userName: string }): {
   subject: string;
   html: string;

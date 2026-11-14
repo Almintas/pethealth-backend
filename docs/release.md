@@ -35,6 +35,12 @@ Optional: `CLOUDINARY_PET_PHOTO_FOLDER` (defaults to `pethealth/pets`).
 
 Cloudinary asset cleanup is best-effort on replace/delete; a failed remote delete may leave an orphaned asset in Cloudinary while MongoDB stays consistent.
 
+### Vet system integration
+
+- `OWNER_SERVICE_SECRET` — shared secret with `pethealth-vet-backend` (same value on both services, 32+ characters in production). Used in both directions.
+- `VET_GRAPHQL_URL` — Vet backend GraphQL URL (e.g. `https://vet-api.example.com/graphql`). Required for owners to see and revoke clinic access to their pets; those operations return a clear error until it is set.
+- `FRONTEND_URL` and Resend settings are also used for account activation emails sent to owners whose pets were registered by a clinic.
+
 ### Pet profile photos (REST)
 
 Photos are **not** uploaded through GraphQL. The Owner Portal uses JWT-authenticated REST endpoints (multipart form field `photo`):

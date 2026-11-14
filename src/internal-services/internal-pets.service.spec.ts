@@ -6,6 +6,7 @@ import { PetsService } from '../pets/pets.service';
 import { Pet } from '../pets/schemas/pet.schema';
 import { UserRole } from '../users/enums/user-role.enum';
 import { UsersService } from '../users/users.service';
+import { AccountActivationService } from '../auth/account-activation/account-activation.service';
 import { InternalPetsService } from './internal-pets.service';
 
 describe('InternalPetsService', () => {
@@ -27,6 +28,10 @@ describe('InternalPetsService', () => {
     updateOwnerProfileForVetIntegration: jest.fn(),
   };
 
+  const accountActivationService = {
+    sendActivationEmailIfUnclaimed: jest.fn(),
+  };
+
   const petsService = {
     createPet: jest.fn(),
     updateActivePetForService: jest.fn(),
@@ -40,6 +45,10 @@ describe('InternalPetsService', () => {
         { provide: getModelToken(Pet.name), useValue: petModel },
         { provide: UsersService, useValue: usersService },
         { provide: PetsService, useValue: petsService },
+        {
+          provide: AccountActivationService,
+          useValue: accountActivationService,
+        },
       ],
     }).compile();
 
@@ -223,6 +232,9 @@ describe('InternalPetsService', () => {
       lastName: 'Owner',
       role: UserRole.USER,
     });
+    expect(
+      accountActivationService.sendActivationEmailIfUnclaimed,
+    ).toHaveBeenCalledWith('new@example.com');
     expect(petsService.createPet).toHaveBeenCalled();
   });
 

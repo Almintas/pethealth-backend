@@ -8,6 +8,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UserRole } from '../users/enums/user-role.enum';
 import { UserModel } from '../users/models/user.model';
 import { UsersService } from '../users/users.service';
+import { AccountActivationService } from './account-activation/account-activation.service';
 import { AuthService } from './auth.service';
 import { LoginInput } from './dto/login.input';
 import { RegisterInput } from './dto/register.input';
@@ -31,6 +32,10 @@ describe('AuthService', () => {
 
   const jwtServiceMock = {
     sign: jest.fn(),
+  };
+
+  const accountActivationServiceMock = {
+    sendActivationEmailIfUnclaimed: jest.fn(),
   };
 
   const registeredUser: UserModel = {
@@ -65,6 +70,10 @@ describe('AuthService', () => {
         {
           provide: JwtService,
           useValue: jwtServiceMock,
+        },
+        {
+          provide: AccountActivationService,
+          useValue: accountActivationServiceMock,
         },
       ],
     }).compile();
@@ -105,8 +114,26 @@ describe('AuthService', () => {
       expect(result).toEqual(registeredUser);
     });
 
+    it('sends an activation email instead of registering over a clinic-created account', async () => {
+      usersServiceMock.findByEmail.mockResolvedValue(registeredUser);
+      accountActivationServiceMock.sendActivationEmailIfUnclaimed.mockResolvedValue(
+        true,
+      );
+
+      await expect(service.register(validInput)).rejects.toThrow(
+        AuthService.ACCOUNT_ACTIVATION_REQUIRED_MESSAGE,
+      );
+      expect(usersServiceMock.createUser).not.toHaveBeenCalled();
+      expect(
+        accountActivationServiceMock.sendActivationEmailIfUnclaimed,
+      ).toHaveBeenCalledWith(registeredUser.email);
+    });
+
     it('rejects duplicate emails', async () => {
       usersServiceMock.findByEmail.mockResolvedValue(registeredUser);
+      accountActivationServiceMock.sendActivationEmailIfUnclaimed.mockResolvedValue(
+        false,
+      );
 
       await expect(service.register(validInput)).rejects.toBeInstanceOf(
         ConflictException,

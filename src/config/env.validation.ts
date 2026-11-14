@@ -94,6 +94,11 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   OWNER_SERVICE_SECRET?: string;
+
+  /** Vet backend GraphQL URL for owner-controlled clinic access (backend only). */
+  @IsString()
+  @IsOptional()
+  VET_GRAPHQL_URL?: string;
 }
 
 function assertJwtSecretPolicy(nodeEnv: Environment, jwtSecret: string): void {

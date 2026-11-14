@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { UserRole } from '../users/enums/user-role.enum';
+import { AccountActivationService } from './account-activation/account-activation.service';
 import { UserModel } from '../users/models/user.model';
 import { UsersService } from '../users/users.service';
 import { ChangePasswordInput } from './dto/change-password.input';
@@ -28,13 +29,28 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly passwordService: PasswordService,
     private readonly jwtService: JwtService,
+    private readonly accountActivationService: AccountActivationService,
   ) {}
+
+  static readonly ACCOUNT_ACTIVATION_REQUIRED_MESSAGE =
+    'Your veterinary clinic has already created an account for this email. We sent you an email with a link to activate it.';
 
   async register(input: RegisterInput): Promise<UserModel> {
     const dto = await this.validateRegisterInput(input);
 
     const existingUser = await this.usersService.findByEmail(dto.email);
     if (existingUser) {
+      // Clinic-created placeholder: prove email ownership via an emailed link
+      // instead of letting whoever registers first take over the records.
+      const isPlaceholder =
+        await this.accountActivationService.sendActivationEmailIfUnclaimed(
+          existingUser.email,
+        );
+      if (isPlaceholder) {
+        throw new ConflictException(
+          AuthService.ACCOUNT_ACTIVATION_REQUIRED_MESSAGE,
+        );
+      }
       throw new ConflictException('A user with this email already exists');
     }
 

@@ -7,6 +7,7 @@ import { Connection, Types } from 'mongoose';
 import { UserRole } from '../src/users/enums/user-role.enum';
 import {
   expectGraphqlErrors,
+  GraphqlResponse,
   postGraphql,
   uniqueEmail,
 } from './helpers/graphql-test.helpers';
@@ -14,6 +15,7 @@ import { applyHttpSecurityMiddleware } from '../src/http-security.config';
 import { ConfigService } from '@nestjs/config';
 import { isCloudinaryPetPhotoConfigured } from '../src/pet-photos/cloudinary-pet-photo.config';
 import request from 'supertest';
+import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 
 const REGISTER_MUTATION = `
@@ -107,6 +109,62 @@ const MEDICAL_RECORD_QUERY = `
   }
 `;
 
+const E2E_SERVICE_SECRET = 'e2e-owner-service-secret-at-least-32-chars';
+
+const CREATE_PET_SHARE_CODE_MUTATION = `
+  mutation CreatePetShareCode($petId: ID!) {
+    createPetShareCode(petId: $petId) {
+      code
+      expiresAt
+    }
+  }
+`;
+
+const INTERNAL_REDEEM_SHARE_CODE_MUTATION = `
+  mutation Redeem($code: String!, $vetClinicId: ID!) {
+    internalRedeemPetShareCode(code: $code, vetClinicId: $vetClinicId) {
+      id
+      name
+      owner {
+        id
+        email
+      }
+    }
+  }
+`;
+
+const INTERNAL_REGISTER_PET_FOR_VET_MUTATION = `
+  mutation RegisterForVet($input: InternalRegisterPetForVetInput!) {
+    internalRegisterPetForVet(input: $input) {
+      id
+      owner {
+        id
+        email
+      }
+    }
+  }
+`;
+
+const INTERNAL_UPDATE_OWNER_PROFILE_MUTATION = `
+  mutation UpdateOwner($petId: ID!, $input: InternalUpdateOwnerProfileForVetInput!) {
+    internalUpdateOwnerProfileForVet(petId: $petId, input: $input) {
+      id
+    }
+  }
+`;
+
+const ACTIVATE_ACCOUNT_MUTATION = `
+  mutation Activate($input: ActivateAccountInput!) {
+    activateAccount(input: $input) {
+      accessToken
+      user {
+        id
+        email
+      }
+    }
+  }
+`;
+
 describe('PetHealth GraphQL (e2e)', () => {
   let app: INestApplication;
   let mongoServer: MongoMemoryServer;
@@ -120,11 +178,11 @@ describe('PetHealth GraphQL (e2e)', () => {
     process.env.THROTTLE_TTL_MS = '60000';
     process.env.THROTTLE_AUTH_LIMIT = '100000';
     process.env.THROTTLE_AUTH_TTL_MS = '60000';
+    process.env.OWNER_SERVICE_SECRET = E2E_SERVICE_SECRET;
 
     /* AppModule is imported dynamically so test env vars exist before ConfigModule validation runs. */
-    const appModule = (await import(
-      '../src/app.module'
-    )) as typeof import('../src/app.module');
+    const appModule =
+      (await import('../src/app.module')) as typeof import('../src/app.module');
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [appModule.AppModule],
     }).compile();
@@ -609,6 +667,152 @@ describe('PetHealth GraphQL (e2e)', () => {
       const response = await postGraphql(app, '{ health { status } }');
       expect(response.body.errors).toBeUndefined();
       expect(response.body.data).toEqual({ health: { status: 'ok' } });
+    });
+  });
+
+  describe('clinic access and account activation', () => {
+    async function postInternal<T>(
+      query: string,
+      variables: Record<string, unknown>,
+      secret: string | null = E2E_SERVICE_SECRET,
+    ): Promise<GraphqlResponse<T>> {
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      let req = request(httpServer).post('/graphql').send({ query, variables });
+      if (secret) {
+        req = req.set('x-pethealth-service-secret', secret);
+      }
+      const response = await req;
+      return response.body as GraphqlResponse<T>;
+    }
+
+    it('lets a clinic redeem an owner share code exactly once', async () => {
+      const owner = await registerUser('share-owner');
+      const ownerToken = await loginUser(owner.email, owner.password);
+      const petResponse = await postGraphql<{ createPet: { id: string } }>(
+        app,
+        CREATE_PET_MUTATION,
+        { input: { name: 'Mila', species: 'Cat' } },
+        ownerToken,
+      );
+      const petId = petResponse.body.data!.createPet.id;
+
+      const codeResponse = await postGraphql<{
+        createPetShareCode: { code: string; expiresAt: string };
+      }>(app, CREATE_PET_SHARE_CODE_MUTATION, { petId }, ownerToken);
+      expect(codeResponse.body.errors).toBeUndefined();
+      const code = codeResponse.body.data!.createPetShareCode.code;
+      expect(code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+
+      const vetClinicId = new Types.ObjectId().toString();
+      const withoutSecret = await postInternal(
+        INTERNAL_REDEEM_SHARE_CODE_MUTATION,
+        { code, vetClinicId },
+        null,
+      );
+      expectGraphqlErrors(withoutSecret);
+
+      const redeemed = await postInternal<{
+        internalRedeemPetShareCode: { id: string; owner: { id: string } };
+      }>(INTERNAL_REDEEM_SHARE_CODE_MUTATION, {
+        code: code.toLowerCase().replace('-', ''),
+        vetClinicId,
+      });
+      expect(redeemed.errors).toBeUndefined();
+      expect(redeemed.data?.internalRedeemPetShareCode.id).toBe(petId);
+      expect(redeemed.data?.internalRedeemPetShareCode.owner.id).toBe(owner.id);
+
+      const reused = await postInternal(INTERNAL_REDEEM_SHARE_CODE_MUTATION, {
+        code,
+        vetClinicId,
+      });
+      expectGraphqlErrors(reused, 'invalid or has expired');
+    });
+
+    it('does not let another user create a share code for someone else’s pet', async () => {
+      const owner = await registerUser('share-real-owner');
+      const ownerToken = await loginUser(owner.email, owner.password);
+      const petResponse = await postGraphql<{ createPet: { id: string } }>(
+        app,
+        CREATE_PET_MUTATION,
+        { input: { name: 'Rex', species: 'Dog' } },
+        ownerToken,
+      );
+      const petId = petResponse.body.data!.createPet.id;
+
+      const stranger = await registerUser('share-stranger');
+      const strangerToken = await loginUser(stranger.email, stranger.password);
+      const response = await postGraphql(
+        app,
+        CREATE_PET_SHARE_CODE_MUTATION,
+        { petId },
+        strangerToken,
+      );
+      expectGraphqlErrors(response.body);
+    });
+
+    it('activates a clinic-created account by emailed token and then protects it from clinic edits', async () => {
+      const email = uniqueEmail('placeholder-owner');
+      const registered = await postInternal<{
+        internalRegisterPetForVet: { id: string; owner: { id: string } };
+      }>(INTERNAL_REGISTER_PET_FOR_VET_MUTATION, {
+        input: {
+          owner: { email, firstName: 'Ona', lastName: 'Owner' },
+          name: 'Pupa',
+          species: 'Dog',
+        },
+      });
+      expect(registered.errors).toBeUndefined();
+      const petId = registered.data!.internalRegisterPetForVet.id;
+      const ownerId = registered.data!.internalRegisterPetForVet.owner.id;
+
+      const selfRegister = await postGraphql(app, REGISTER_MUTATION, {
+        input: {
+          email,
+          password: 'Password123!',
+          firstName: 'Someone',
+          lastName: 'Else',
+        },
+      });
+      expectGraphqlErrors(selfRegister.body, 'activate');
+
+      const token = 'e2e-known-activation-token';
+      const connection = app.get<Connection>(getConnectionToken());
+      await connection.collection('account_activation_tokens').insertOne({
+        userId: new Types.ObjectId(ownerId),
+        tokenHash: createHash('sha256').update(token).digest('hex'),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        usedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const activated = await postGraphql<{
+        activateAccount: { accessToken: string; user: { id: string } };
+      }>(app, ACTIVATE_ACCOUNT_MUTATION, {
+        input: { token, password: 'NewPassword123!' },
+      });
+      expect(activated.body.errors).toBeUndefined();
+      expect(activated.body.data?.activateAccount.user.id).toBe(ownerId);
+
+      await loginUser(email, 'NewPassword123!');
+
+      const reused = await postGraphql(app, ACTIVATE_ACCOUNT_MUTATION, {
+        input: { token, password: 'Another123!' },
+      });
+      expectGraphqlErrors(reused.body, 'invalid or has expired');
+
+      const clinicEdit = await postInternal(
+        INTERNAL_UPDATE_OWNER_PROFILE_MUTATION,
+        {
+          petId,
+          input: {
+            firstName: 'Ona',
+            lastName: 'Owner',
+            email: uniqueEmail('attacker'),
+          },
+        },
+      );
+      expectGraphqlErrors(clinicEdit, 'manages their own account');
     });
   });
 });

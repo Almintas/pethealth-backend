@@ -334,6 +334,32 @@ export class UsersService {
     }
   }
 
+  /**
+   * Sets the first password on a placeholder owner account. Atomic: returns
+   * false when the account already has a password (or is not an owner).
+   */
+  async setPasswordHashIfUnclaimed(
+    userId: string,
+    passwordHash: string,
+  ): Promise<boolean> {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const result = await this.userModel
+      .updateOne(
+        {
+          _id: userId,
+          role: UserRole.USER,
+          passwordHash: { $in: [null, ''] },
+        },
+        { $set: { passwordHash } },
+      )
+      .exec();
+
+    return result.modifiedCount > 0;
+  }
+
   private async validateCreateUserInput(
     input: CreateUserDto,
   ): Promise<CreateUserDto> {

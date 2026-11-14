@@ -11,10 +11,43 @@ import { UpdateProfileInput } from './dto/update-profile.input';
 import { GqlAuthGuard } from './guards/gql-auth.guard';
 import { AuthPayload } from './models/auth-payload.model';
 import { AuthService } from './auth.service';
+import { AccountActivationService } from './account-activation/account-activation.service';
+import { ActivateAccountInput } from './account-activation/dto/activate-account.input';
+import { RequestAccountActivationInput } from './account-activation/dto/request-account-activation.input';
 
 @Resolver()
 export class AuthResolver {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly accountActivationService: AccountActivationService,
+  ) {}
+
+  @Mutation(() => AuthPayload, {
+    name: 'activateAccount',
+    description:
+      'Set a password on a clinic-created account using the emailed activation token',
+  })
+  @AuthRateLimit()
+  activateAccount(
+    @Args('input') input: ActivateAccountInput,
+  ): Promise<AuthPayload> {
+    return this.accountActivationService.activate(input.token, input.password);
+  }
+
+  @Mutation(() => Boolean, {
+    name: 'requestAccountActivation',
+    description:
+      'Send a new activation email for a clinic-created account. Always returns true.',
+  })
+  @AuthRateLimit()
+  async requestAccountActivation(
+    @Args('input') input: RequestAccountActivationInput,
+  ): Promise<boolean> {
+    await this.accountActivationService.sendActivationEmailIfUnclaimed(
+      input.email,
+    );
+    return true;
+  }
 
   @Mutation(() => UserModel, {
     name: 'register',

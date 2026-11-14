@@ -16,6 +16,7 @@ import { isProductionEnvironment } from './config/environment.util';
 import { buildDefaultThrottlerOptions } from './config/throttle.config';
 import { AuthModule } from './auth/auth.module';
 import { InternalServicesModule } from './internal-services/internal-services.module';
+import { ClinicAccessModule } from './clinic-access/clinic-access.module';
 import { HealthModule } from './health/health.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
 import { PetsModule } from './pets/pets.module';
@@ -87,6 +88,7 @@ function resolveGraphqlSchemaPath(): string {
     AuthModule,
     PetsModule,
     InternalServicesModule,
+    ClinicAccessModule,
     MedicalRecordsModule,
     VaccinationsModule,
     MedicationsModule,

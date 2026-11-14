@@ -12,6 +12,7 @@ import { ACTIVE_PET_FILTER } from '../pets/constants/active-pet-filter';
 import { Pet, PetDocument } from '../pets/schemas/pet.schema';
 import { UserRole } from '../users/enums/user-role.enum';
 import { UsersService } from '../users/users.service';
+import { AccountActivationService } from '../auth/account-activation/account-activation.service';
 import { InternalRegisterPetForVetInput } from './dto/internal-register-pet-for-vet.input';
 import { InternalUpdateOwnerProfileForVetInput } from './dto/internal-update-owner-profile-for-vet.input';
 import { InternalUpdatePetForVetInput } from './dto/internal-update-pet-for-vet.input';
@@ -24,6 +25,7 @@ export class InternalPetsService {
     @InjectModel(Pet.name) private readonly petModel: Model<PetDocument>,
     private readonly usersService: UsersService,
     private readonly petsService: PetsService,
+    private readonly accountActivationService: AccountActivationService,
   ) {}
 
   async findActivePetsByIds(petIds: string[]): Promise<InternalPetForVet[]> {
@@ -180,6 +182,10 @@ export class InternalPetsService {
       lastName: owner.lastName,
       role: UserRole.USER,
     });
+    // Invite the owner to activate the account the clinic just created.
+    await this.accountActivationService.sendActivationEmailIfUnclaimed(
+      owner.email,
+    );
     return created.id;
   }
 }

@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { PetsModule } from '../pets/pets.module';
 import { Pet, PetSchema } from '../pets/schemas/pet.schema';
 import { UsersModule } from '../users/users.module';
+import { AuthModule } from '../auth/auth.module';
 import { InternalServiceGuard } from './guards/internal-service.guard';
 import { AppointmentsModule } from '../appointments/appointments.module';
 import { MedicalRecordsModule } from '../medical-records/medical-records.module';
@@ -22,6 +23,7 @@ import { InternalPetsService } from './internal-pets.service';
 @Module({
   imports: [
     UsersModule,
+    AuthModule,
     PetsModule,
     AppointmentsModule,
     MedicalRecordsModule,
