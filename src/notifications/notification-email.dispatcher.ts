@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { AppointmentStatus } from '../appointments/enums/appointment-status.enum';
 import {
   Appointment,
@@ -22,9 +22,11 @@ import {
   buildMedicationReminderEmail,
   buildTestEmail,
   buildVaccinationReminderEmail,
+  describeAppointmentLead,
   formatUtcDate,
   formatUtcTime,
 } from './email-templates';
+import { buildFrontendUrl } from './frontend-url';
 import { NotificationChannel } from './enums/notification-channel.enum';
 import { NotificationType } from './enums/notification-type.enum';
 import {
@@ -33,7 +35,10 @@ import {
 } from './notification-delivery.service';
 
 const APPOINTMENT_REMINDER_LEAD_MS = 24 * 60 * 60 * 1000;
+/** How far back missed medication/vaccination reminders are still emailed. */
 const MAX_CATCHUP_MS = 7 * 24 * 60 * 60 * 1000;
+
+type OwnerContext = { pet: PetDocument; user: UserDocument };
 
 @Injectable()
 export class NotificationEmailDispatcher {
@@ -84,33 +89,32 @@ export class NotificationEmailDispatcher {
   }
 
   private async processAppointmentReminders(now: Date): Promise<void> {
-    /*
-     * A reminder is due once the appointment is in the future but no more
-     * than 24h away. Filtering in the query avoids loading every future
-     * appointment on each scheduler tick.
-     */
-    const windowEnd = new Date(now.getTime() + APPOINTMENT_REMINDER_LEAD_MS);
+    // Only appointments whose 24h reminder time has arrived (scheduled within
+    // the next 24h) are relevant; never scan the whole future schedule.
     const appointments = await this.appointmentModel
       .find({
         status: AppointmentStatus.SCHEDULED,
-        scheduledAt: { $gt: now, $lte: windowEnd },
+        scheduledAt: {
+          $gt: now,
+          $lte: new Date(now.getTime() + APPOINTMENT_REMINDER_LEAD_MS),
+        },
       })
       .exec();
+
+    const owners = await this.loadOwnerContexts(
+      appointments.map((appointment) => appointment.petId),
+    );
 
     for (const appointment of appointments) {
       const scheduledFor = new Date(
         appointment.scheduledAt.getTime() - APPOINTMENT_REMINDER_LEAD_MS,
       );
 
-      const pet = await this.petModel.findById(appointment.petId).exec();
-      if (!pet || pet.deletedAt) {
+      const context = owners.get(appointment.petId.toString());
+      if (!context) {
         continue;
       }
-
-      const user = await this.userModel.findById(pet.ownerId).exec();
-      if (!user?.email) {
-        continue;
-      }
+      const { pet, user } = context;
 
       const prefs = resolveNotificationPreferences(
         user.notificationPreferences,
@@ -153,6 +157,7 @@ export class NotificationEmailDispatcher {
         clinicName: appointment.clinicName,
         veterinarianName: appointment.veterinarianName,
         viewUrl,
+        leadLabel: describeAppointmentLead(appointment.scheduledAt, now),
       });
 
       await this.dispatchEmail({
@@ -183,16 +188,16 @@ export class NotificationEmailDispatcher {
       })
       .exec();
 
-    for (const reminder of reminders) {
-      const pet = await this.petModel.findById(reminder.petId).exec();
-      if (!pet || pet.deletedAt) {
-        continue;
-      }
+    const owners = await this.loadOwnerContexts(
+      reminders.map((reminder) => reminder.petId),
+    );
 
-      const user = await this.userModel.findById(pet.ownerId).exec();
-      if (!user?.email) {
+    for (const reminder of reminders) {
+      const context = owners.get(reminder.petId.toString());
+      if (!context) {
         continue;
       }
+      const { pet, user } = context;
 
       const prefs = resolveNotificationPreferences(
         user.notificationPreferences,
@@ -276,26 +281,14 @@ export class NotificationEmailDispatcher {
     html: string;
     text: string;
   }): Promise<void> {
+    let result: Awaited<ReturnType<EmailService['send']>>;
     try {
-      const result = await this.emailService.send({
+      result = await this.emailService.send({
         to: params.to,
         subject: params.subject,
         html: params.html,
         text: params.text,
       });
-
-      if (result.ok) {
-        await this.deliveryService.markSent(
-          params.deliveryKey,
-          result.messageId,
-        );
-        return;
-      }
-
-      await this.deliveryService.markFailed(
-        params.deliveryKey,
-        result.errorMessage,
-      );
     } catch (error: unknown) {
       const message =
         error instanceof Error
@@ -303,14 +296,66 @@ export class NotificationEmailDispatcher {
           : 'Unexpected email dispatch error';
       this.logger.error(`Notification dispatch failed: ${message}`);
       await this.deliveryService.markFailed(params.deliveryKey, message);
+      return;
+    }
+
+    if (!result.ok) {
+      await this.deliveryService.markFailed(
+        params.deliveryKey,
+        result.errorMessage,
+      );
+      return;
+    }
+
+    // The email has been sent. Never mark it FAILED from here (that would
+    // trigger a duplicate send); retry recording success once, then leave the
+    // record PENDING, which is only reclaimed after a long stale window.
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        await this.deliveryService.markSent(
+          params.deliveryKey,
+          result.messageId,
+        );
+        return;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `Email sent but recording delivery failed (attempt ${attempt}): ${message}`,
+        );
+      }
     }
   }
 
+  /** Batch-loads active pets and their owners (with an email) keyed by pet id. */
+  private async loadOwnerContexts(
+    petIds: Types.ObjectId[],
+  ): Promise<Map<string, OwnerContext>> {
+    const result = new Map<string, OwnerContext>();
+    const uniquePetIds = [...new Set(petIds.map((id) => id.toString()))];
+    if (!uniquePetIds.length) {
+      return result;
+    }
+
+    const pets = await this.petModel
+      .find({ _id: { $in: uniquePetIds }, deletedAt: null })
+      .exec();
+    const ownerIds = [...new Set(pets.map((pet) => pet.ownerId.toString()))];
+    const users = ownerIds.length
+      ? await this.userModel.find({ _id: { $in: ownerIds } }).exec()
+      : [];
+    const usersById = new Map(users.map((user) => [user._id.toString(), user]));
+
+    for (const pet of pets) {
+      const user = usersById.get(pet.ownerId.toString());
+      if (user?.email) {
+        result.set(pet._id.toString(), { pet, user });
+      }
+    }
+
+    return result;
+  }
+
   private buildPetUrl(petId: string): string {
-    const base =
-      this.configService.get<string>('FRONTEND_URL')?.trim() ||
-      'http://localhost:5173';
-    const normalized = base.replace(/\/$/, '');
-    return `${normalized}/pets/${petId}`;
+    return buildFrontendUrl(this.configService, `/pets/${petId}`);
   }
 }

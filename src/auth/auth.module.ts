@@ -15,6 +15,7 @@ import { AuthResolver } from './auth.resolver';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
+import { PasswordResetService } from './password-reset.service';
 import { PasswordService } from './password.service';
 
 const defaultJwtExpiresIn = '1d' as const;
@@ -45,10 +46,17 @@ const defaultJwtExpiresIn = '1d' as const;
     AuthResolver,
     AuthService,
     PasswordService,
+    PasswordResetService,
     JwtStrategy,
     RolesGuard,
     AccountActivationService,
   ],
-  exports: [PassportModule, JwtModule, RolesGuard, AccountActivationService],
+  exports: [
+    PassportModule,
+    JwtModule,
+    RolesGuard,
+    AccountActivationService,
+    PasswordResetService,
+  ],
 })
 export class AuthModule {}

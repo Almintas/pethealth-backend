@@ -8,7 +8,20 @@ import { InjectModel } from '@nestjs/mongoose';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Model, Types, isValidObjectId } from 'mongoose';
+import {
+  Appointment,
+  AppointmentDocument,
+} from '../appointments/schemas/appointment.schema';
+import {
+  Medication,
+  MedicationDocument,
+} from '../medications/schemas/medication.schema';
 import { PetOwnershipService } from '../pets/pet-ownership.service';
+import {
+  Vaccination,
+  VaccinationDocument,
+} from '../vaccinations/schemas/vaccination.schema';
+import { SourceType } from './enums/source-type.enum';
 import { CreateReminderInput } from './dto/create-reminder.input';
 import { UpdateReminderInput } from './dto/update-reminder.input';
 import { ReminderStatus } from './enums/reminder-status.enum';
@@ -21,6 +34,12 @@ export class RemindersService {
     @InjectModel(Reminder.name)
     private readonly reminderModel: Model<ReminderDocument>,
     private readonly petOwnershipService: PetOwnershipService,
+    @InjectModel(Vaccination.name)
+    private readonly vaccinationModel: Model<VaccinationDocument>,
+    @InjectModel(Medication.name)
+    private readonly medicationModel: Model<MedicationDocument>,
+    @InjectModel(Appointment.name)
+    private readonly appointmentModel: Model<AppointmentDocument>,
   ) {}
 
   async createReminder(
@@ -35,6 +54,13 @@ export class RemindersService {
       dto.petId,
       'Pet not found',
     );
+    if (dto.sourceType !== undefined && dto.sourceId !== undefined) {
+      await this.assertSourceBelongsToPet(
+        dto.sourceType,
+        dto.sourceId,
+        dto.petId,
+      );
+    }
 
     try {
       const created = await this.reminderModel.create({
@@ -184,6 +210,35 @@ export class RemindersService {
       throw new BadRequestException(
         'sourceType and sourceId must be provided together',
       );
+    }
+  }
+
+  /** The linked record must exist and belong to the same pet as the reminder. */
+  private async assertSourceBelongsToPet(
+    sourceType: SourceType,
+    sourceId: string,
+    petId: string,
+  ): Promise<void> {
+    const filter = {
+      _id: new Types.ObjectId(sourceId),
+      petId: new Types.ObjectId(petId),
+    };
+
+    let exists: unknown;
+    switch (sourceType) {
+      case SourceType.VACCINATION:
+        exists = await this.vaccinationModel.exists(filter).exec();
+        break;
+      case SourceType.MEDICATION:
+        exists = await this.medicationModel.exists(filter).exec();
+        break;
+      case SourceType.APPOINTMENT:
+        exists = await this.appointmentModel.exists(filter).exec();
+        break;
+    }
+
+    if (!exists) {
+      throw new BadRequestException('Linked record not found for this pet');
     }
   }
 

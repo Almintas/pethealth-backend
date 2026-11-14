@@ -12,7 +12,10 @@ import { plainToInstance } from 'class-transformer';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UserRole } from './enums/user-role.enum';
 import { CreateUserOptions } from './interfaces/create-user-options.interface';
-import { UserWithPasswordHash } from './interfaces/user-with-password-hash.interface';
+import {
+  UserAuthState,
+  UserWithPasswordHash,
+} from './interfaces/user-with-password-hash.interface';
 import { NotificationPreferencesModel } from './models/notification-preferences.model';
 import { UserModel } from './models/user.model';
 import { resolveNotificationPreferences } from './notification-preferences.util';
@@ -80,7 +83,7 @@ export class UsersService {
 
     const user = await this.userModel
       .findOne({ email: normalizedEmail })
-      .select('+passwordHash')
+      .select('+passwordHash +tokenVersion')
       .exec();
 
     if (!user?.passwordHash) {
@@ -90,6 +93,7 @@ export class UsersService {
     return {
       user: this.toUserModel(user),
       passwordHash: user.passwordHash,
+      tokenVersion: user.tokenVersion ?? 0,
     };
   }
 
@@ -111,7 +115,7 @@ export class UsersService {
 
     const user = await this.userModel
       .findById(id)
-      .select('+passwordHash')
+      .select('+passwordHash +tokenVersion')
       .exec();
 
     if (!user?.passwordHash) {
@@ -121,7 +125,91 @@ export class UsersService {
     return {
       user: this.toUserModel(user),
       passwordHash: user.passwordHash,
+      tokenVersion: user.tokenVersion ?? 0,
     };
+  }
+
+  /** Loads the user plus the token version used to validate JWTs. */
+  async findAuthStateById(id: string): Promise<UserAuthState | null> {
+    if (!isValidObjectId(id)) {
+      return null;
+    }
+
+    const user = await this.userModel
+      .findById(id)
+      .select('+tokenVersion')
+      .exec();
+    if (!user) {
+      return null;
+    }
+
+    return {
+      user: this.toUserModel(user),
+      tokenVersion: user.tokenVersion ?? 0,
+    };
+  }
+
+  /** Returns the account (if any) and whether it already has a password set. */
+  async findByEmailWithAccountStatus(
+    email: string,
+  ): Promise<{ user: UserModel; hasPassword: boolean } | null> {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      return null;
+    }
+
+    const user = await this.userModel
+      .findOne({ email: normalizedEmail })
+      .select('+passwordHash')
+      .exec();
+    if (!user) {
+      return null;
+    }
+
+    return { user: this.toUserModel(user), hasPassword: !!user.passwordHash };
+  }
+
+  async setPasswordResetToken(
+    userId: string,
+    tokenHash: string,
+    expiresAt: Date,
+  ): Promise<void> {
+    await this.userModel
+      .updateOne(
+        { _id: userId },
+        {
+          $set: {
+            passwordResetTokenHash: tokenHash,
+            passwordResetExpiresAt: expiresAt,
+          },
+        },
+      )
+      .exec();
+  }
+
+  /**
+   * Atomically consumes a valid, unexpired reset token and sets the new password.
+   * Returns false when the token is unknown, expired, or already used.
+   */
+  async resetPasswordWithToken(
+    tokenHash: string,
+    passwordHash: string,
+  ): Promise<boolean> {
+    const updated = await this.userModel
+      .findOneAndUpdate(
+        {
+          passwordResetTokenHash: tokenHash,
+          passwordResetExpiresAt: { $gt: new Date() },
+        },
+        {
+          $set: { passwordHash },
+          $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+          $inc: { tokenVersion: 1 },
+        },
+      )
+      .exec();
+
+    return updated !== null;
   }
 
   static readonly OWNER_EMAIL_IN_USE_MESSAGE =
@@ -326,7 +414,14 @@ export class UsersService {
     }
 
     const result = await this.userModel
-      .updateOne({ _id: userId }, { passwordHash })
+      .updateOne(
+        { _id: userId },
+        {
+          $set: { passwordHash },
+          $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+          $inc: { tokenVersion: 1 },
+        },
+      )
       .exec();
 
     if (result.matchedCount === 0) {

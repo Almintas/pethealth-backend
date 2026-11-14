@@ -13,12 +13,15 @@ import { PASSWORD_MAX_LENGTH } from '../constants/password-policy';
 export class RegisterInput {
   @Field(() => String, { description: 'Unique email address' })
   @IsEmail()
+  @MaxLength(254)
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   email!: string;
 
-  @Field(() => String, { description: 'Account password (min 8 characters)' })
+  @Field(() => String, {
+    description: 'Account password (8-72 characters)',
+  })
   @IsString()
   @MinLength(8)
   @MaxLength(PASSWORD_MAX_LENGTH, {

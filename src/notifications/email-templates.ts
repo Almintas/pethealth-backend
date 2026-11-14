@@ -8,7 +8,7 @@ type EmailLayoutParams = {
 function layout(params: EmailLayoutParams): { html: string; text: string } {
   const ctaBlock =
     params.ctaLabel && params.ctaUrl
-      ? `<p style="margin:24px 0 0;"><a href="${params.ctaUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;">${params.ctaLabel}</a></p>`
+      ? `<p style="margin:24px 0 0;"><a href="${escapeHtml(params.ctaUrl)}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;">${escapeHtml(params.ctaLabel)}</a></p>`
       : '';
 
   const html = `<!DOCTYPE html>
@@ -39,8 +39,14 @@ function layout(params: EmailLayoutParams): { html: string; text: string } {
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n')
       .replace(/<[^>]+>/g, '')
+      .replace(/^[ \t]+/gm, '')
       .replace(/\n{3,}/g, '\n\n')
-      .trim(),
+      .trim()
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&'),
   ];
 
   if (params.ctaLabel && params.ctaUrl) {
@@ -61,6 +67,8 @@ export function buildAppointmentReminderEmail(params: {
   clinicName?: string;
   veterinarianName?: string;
   viewUrl: string;
+  /** Human-readable time until the appointment, e.g. "in about 24 hours". */
+  leadLabel?: string;
 }): { subject: string; html: string; text: string } {
   const clinic = params.clinicName
     ? `<p style="margin:12px 0 0;"><strong>Clinic:</strong><br>${escapeHtml(params.clinicName)}</p>`
@@ -71,7 +79,7 @@ export function buildAppointmentReminderEmail(params: {
 
   const bodyHtml = `
     <p>Hi ${escapeHtml(params.userName)},</p>
-    <p><strong>${escapeHtml(params.petName)}</strong> has an appointment coming up in about 24 hours.</p>
+    <p><strong>${escapeHtml(params.petName)}</strong> has an appointment coming up ${escapeHtml(params.leadLabel ?? 'in about 24 hours')}.</p>
     <p style="margin:16px 0 0;"><strong>Date:</strong><br>${escapeHtml(params.dateLabel)}</p>
     <p style="margin:12px 0 0;"><strong>Time:</strong><br>${escapeHtml(params.timeLabel)} (UTC)</p>
     <p style="margin:12px 0 0;"><strong>Type:</strong><br>${escapeHtml(params.type)}</p>
@@ -181,6 +189,27 @@ export function buildAccountActivationEmail(params: {
   };
 }
 
+export function buildPasswordResetEmail(params: {
+  userName: string;
+  resetUrl: string;
+  expiresInLabel: string;
+}): { subject: string; html: string; text: string } {
+  const bodyHtml = `
+    <p>Hi ${escapeHtml(params.userName)},</p>
+    <p>We received a request to reset your PetHealth password. Use the button below to choose a new one. The link expires in ${escapeHtml(params.expiresInLabel)} and can be used once.</p>
+    <p>If you did not request this, you can ignore this email; your password will not change.</p>
+  `;
+
+  const { html, text } = layout({
+    title: 'Reset your password',
+    bodyHtml,
+    ctaLabel: 'Reset password',
+    ctaUrl: params.resetUrl,
+  });
+
+  return { subject: 'Reset your PetHealth password', html, text };
+}
+
 export function buildTestEmail(params: { userName: string }): {
   subject: string;
   html: string;
@@ -208,7 +237,21 @@ function escapeHtml(value: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function describeAppointmentLead(scheduledAt: Date, now: Date): string {
+  const hours = Math.round(
+    (scheduledAt.getTime() - now.getTime()) / (60 * 60 * 1000),
+  );
+  if (hours >= 23) {
+    return 'in about 24 hours';
+  }
+  if (hours >= 2) {
+    return `in about ${hours} hours`;
+  }
+  return 'soon';
 }
 
 export function formatUtcDate(date: Date): string {

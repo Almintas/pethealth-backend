@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
@@ -280,6 +284,59 @@ describe('AppointmentsService', () => {
           $lte: scheduledTo,
         },
       });
+    });
+  });
+
+  describe('clinic-managed appointments', () => {
+    const mockClinicAppointment = () => {
+      const document = {
+        ...buildAppointmentDocument(petId),
+        vetClinicId: 'clinic-1',
+      };
+      appointmentModelMock.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(document),
+      });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
+      return document;
+    };
+
+    it('prevents owners from updating appointments created by a clinic', async () => {
+      const document = mockClinicAppointment();
+
+      await expect(
+        service.updateAppointment(ownerId, appointmentId, { notes: 'x' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(document.save).not.toHaveBeenCalled();
+    });
+
+    it('prevents owners from deleting appointments created by a clinic', async () => {
+      const document = mockClinicAppointment();
+
+      await expect(
+        service.deleteAppointment(ownerId, appointmentId),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(document.deleteOne).not.toHaveBeenCalled();
+    });
+
+    it('still lets the clinic update its appointments via the service path', async () => {
+      const document = mockClinicAppointment();
+
+      await service.updateAppointmentForService(appointmentId, {
+        notes: 'Bring records',
+      });
+      expect(document.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('null updates', () => {
+    it('rejects null for required fields with a validation error', async () => {
+      await expect(
+        service.updateAppointment(ownerId, appointmentId, {
+          type: null,
+        } as unknown as UpdateAppointmentInput),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 

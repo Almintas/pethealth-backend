@@ -19,6 +19,12 @@ import { UpdateNotificationPreferencesInput } from './dto/update-notification-pr
 import { UpdateProfileInput } from './dto/update-profile.input';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { AuthPayload } from './models/auth-payload.model';
+import { RequestPasswordResetInput } from './dto/request-password-reset.input';
+import { ResetPasswordInput } from './dto/reset-password.input';
+import {
+  hashPasswordResetToken,
+  PasswordResetService,
+} from './password-reset.service';
 import { PasswordService } from './password.service';
 
 @Injectable()
@@ -30,6 +36,7 @@ export class AuthService {
     private readonly passwordService: PasswordService,
     private readonly jwtService: JwtService,
     private readonly accountActivationService: AccountActivationService,
+    private readonly passwordResetService: PasswordResetService,
   ) {}
 
   static readonly ACCOUNT_ACTIVATION_REQUIRED_MESSAGE =
@@ -90,6 +97,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: authRecord.user.id,
       role: authRecord.user.role,
+      tv: authRecord.tokenVersion,
     };
 
     return {
@@ -154,6 +162,31 @@ export class AuthService {
     return true;
   }
 
+  async requestPasswordReset(
+    input: RequestPasswordResetInput,
+  ): Promise<boolean> {
+    const dto = await this.validateInput(RequestPasswordResetInput, input);
+    await this.passwordResetService.requestPasswordReset(dto.email);
+    return true;
+  }
+
+  async resetPassword(input: ResetPasswordInput): Promise<boolean> {
+    const dto = await this.validateInput(ResetPasswordInput, input);
+    const passwordHash = await this.passwordService.hash(dto.newPassword);
+    const updated = await this.usersService.resetPasswordWithToken(
+      hashPasswordResetToken(dto.token),
+      passwordHash,
+    );
+
+    if (!updated) {
+      throw new BadRequestException(
+        'This link is invalid or has expired. Request a new one.',
+      );
+    }
+
+    return true;
+  }
+
   async updateNotificationPreferences(
     currentUser: UserModel,
     input: UpdateNotificationPreferencesInput,
@@ -173,6 +206,22 @@ export class AuthService {
       emailMedicationReminders: dto.emailMedicationReminders,
       emailVaccinationReminders: dto.emailVaccinationReminders,
     });
+  }
+
+  private async validateInput<T extends object>(
+    cls: new () => T,
+    input: T,
+  ): Promise<T> {
+    const dto = plainToInstance(cls, input, {
+      enableImplicitConversion: true,
+    });
+    const errors = await validate(dto);
+
+    if (errors.length > 0) {
+      throw new BadRequestException(errors);
+    }
+
+    return dto;
   }
 
   private async validateUpdateNotificationPreferencesInput(

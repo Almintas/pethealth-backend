@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -16,6 +17,9 @@ import { UpdateAppointmentInput } from './dto/update-appointment.input';
 import { AppointmentStatus } from './enums/appointment-status.enum';
 import { AppointmentModel } from './models/appointment.model';
 import { Appointment, AppointmentDocument } from './schemas/appointment.schema';
+
+export const CLINIC_MANAGED_APPOINTMENT_MESSAGE =
+  'This appointment is managed by your veterinary clinic. Contact the clinic to change or cancel it.';
 
 @Injectable()
 export class AppointmentsService {
@@ -104,6 +108,7 @@ export class AppointmentsService {
       ownerId,
       appointmentId,
     );
+    this.assertNotClinicManaged(appointment);
     const originalPetId = appointment.petId.toString();
 
     if (dto.scheduledAt !== undefined) {
@@ -269,6 +274,7 @@ export class AppointmentsService {
       ownerId,
       appointmentId,
     );
+    this.assertNotClinicManaged(appointment);
     await appointment.deleteOne();
     return true;
   }
@@ -327,6 +333,13 @@ export class AppointmentsService {
     );
 
     return appointment;
+  }
+
+  /** Appointments created by a clinic (via the Vet integration) are read-only for owners. */
+  private assertNotClinicManaged(appointment: AppointmentDocument): void {
+    if (appointment.vetClinicId) {
+      throw new ForbiddenException(CLINIC_MANAGED_APPOINTMENT_MESSAGE);
+    }
   }
 
   private assertValidDate(value: Date, fieldName: string): void {

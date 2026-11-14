@@ -1,4 +1,5 @@
 import { UseGuards } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { InternalCreateMedicalRecordForVetInput } from './dto/internal-create-medical-record-for-vet.input';
 import { InternalMedicalRecordsPageInput } from './dto/internal-medical-records-page.input';
@@ -8,6 +9,9 @@ import { InternalMedicalRecordsService } from './internal-medical-records.servic
 import { InternalMedicalRecordForVet } from './models/internal-medical-record-for-vet.model';
 import { InternalMedicalRecordsPageForVet } from './models/internal-medical-records-page.model';
 
+// Service-to-service calls all come from the Vet backend's IP and are
+// authenticated by a shared secret, so the per-IP browser limit does not apply.
+@SkipThrottle()
 @Resolver()
 export class InternalMedicalRecordsResolver {
   constructor(

@@ -1,13 +1,27 @@
 import { Throttle } from '@nestjs/throttler';
 
-const authLimit = Number(process.env.THROTTLE_AUTH_LIMIT ?? 5);
-const authTtlMs = Number(process.env.THROTTLE_AUTH_TTL_MS ?? 60_000);
+const DEFAULT_AUTH_LIMIT = 5;
+const DEFAULT_AUTH_TTL_MS = 60_000;
 
-/** Stricter rate limit for login and register mutations. */
+/**
+ * Read at request time, not import time: decorators are evaluated before
+ * ConfigModule has loaded `.env` into process.env.
+ */
+export function resolveAuthLimit(): number {
+  const value = Number(process.env.THROTTLE_AUTH_LIMIT ?? DEFAULT_AUTH_LIMIT);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_AUTH_LIMIT;
+}
+
+export function resolveAuthTtlMs(): number {
+  const value = Number(process.env.THROTTLE_AUTH_TTL_MS ?? DEFAULT_AUTH_TTL_MS);
+  return Number.isFinite(value) && value >= 1000 ? value : DEFAULT_AUTH_TTL_MS;
+}
+
+/** Stricter rate limit for login, register and password reset mutations. */
 export const AuthRateLimit = (): MethodDecorator & ClassDecorator =>
   Throttle({
     default: {
-      limit: Number.isFinite(authLimit) && authLimit > 0 ? authLimit : 5,
-      ttl: Number.isFinite(authTtlMs) && authTtlMs >= 1000 ? authTtlMs : 60_000,
+      limit: () => resolveAuthLimit(),
+      ttl: () => resolveAuthTtlMs(),
     },
   });

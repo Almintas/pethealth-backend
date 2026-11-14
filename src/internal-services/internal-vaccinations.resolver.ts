@@ -1,4 +1,5 @@
 import { UseGuards } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { InternalCreateVaccinationForVetInput } from './dto/internal-create-vaccination-for-vet.input';
 import { InternalUpdateVaccinationForVetInput } from './dto/internal-update-vaccination-for-vet.input';
@@ -8,6 +9,9 @@ import { InternalVaccinationsService } from './internal-vaccinations.service';
 import { InternalVaccinationForVet } from './models/internal-vaccination-for-vet.model';
 import { InternalVaccinationsPageForVet } from './models/internal-vaccinations-page.model';
 
+// Service-to-service calls all come from the Vet backend's IP and are
+// authenticated by a shared secret, so the per-IP browser limit does not apply.
+@SkipThrottle()
 @Resolver()
 export class InternalVaccinationsResolver {
   constructor(

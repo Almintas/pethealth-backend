@@ -13,6 +13,10 @@ import { AuthService } from './auth.service';
 import { LoginInput } from './dto/login.input';
 import { RegisterInput } from './dto/register.input';
 import { UpdateNotificationPreferencesInput } from './dto/update-notification-preferences.input';
+import {
+  hashPasswordResetToken,
+  PasswordResetService,
+} from './password-reset.service';
 import { PasswordService } from './password.service';
 
 describe('AuthService', () => {
@@ -20,9 +24,15 @@ describe('AuthService', () => {
 
   const usersServiceMock = {
     findByEmail: jest.fn(),
+    findByEmailWithAccountStatus: jest.fn(),
     findByEmailWithPasswordHash: jest.fn(),
     createUser: jest.fn(),
     updateNotificationPreferences: jest.fn(),
+    resetPasswordWithToken: jest.fn(),
+  };
+
+  const passwordResetServiceMock = {
+    requestPasswordReset: jest.fn(),
   };
 
   const passwordServiceMock = {
@@ -76,6 +86,10 @@ describe('AuthService', () => {
           provide: AccountActivationService,
           useValue: accountActivationServiceMock,
         },
+        {
+          provide: PasswordResetService,
+          useValue: passwordResetServiceMock,
+        },
       ],
     }).compile();
 
@@ -95,7 +109,7 @@ describe('AuthService', () => {
     };
 
     it('registers a user with a hashed password', async () => {
-      usersServiceMock.findByEmail.mockResolvedValue(null);
+      usersServiceMock.findByEmailWithAccountStatus.mockResolvedValue(null);
       passwordServiceMock.hash.mockResolvedValue('hashed-password');
       usersServiceMock.createUser.mockResolvedValue(registeredUser);
 
@@ -143,6 +157,12 @@ describe('AuthService', () => {
       expect(usersServiceMock.createUser).not.toHaveBeenCalled();
     });
 
+    it('rejects passwords longer than 72 characters', async () => {
+      await expect(
+        service.register({ ...validInput, password: 'a'.repeat(73) }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it('rejects passwords shorter than 8 characters', async () => {
       await expect(
         service.register({
@@ -172,6 +192,7 @@ describe('AuthService', () => {
       usersServiceMock.findByEmailWithPasswordHash.mockResolvedValue({
         user: registeredUser,
         passwordHash: 'hashed-password',
+        tokenVersion: 3,
       });
       passwordServiceMock.compare.mockResolvedValue(true);
       jwtServiceMock.sign.mockReturnValue('signed-jwt');
@@ -188,6 +209,7 @@ describe('AuthService', () => {
       expect(jwtServiceMock.sign).toHaveBeenCalledWith({
         sub: registeredUser.id,
         role: registeredUser.role,
+        tv: 3,
       });
       expect(result).toEqual({
         accessToken: 'signed-jwt',
@@ -213,6 +235,7 @@ describe('AuthService', () => {
       usersServiceMock.findByEmailWithPasswordHash.mockResolvedValue({
         user: registeredUser,
         passwordHash: 'hashed-password',
+        tokenVersion: 3,
       });
       passwordServiceMock.compare.mockResolvedValue(false);
 
@@ -220,6 +243,43 @@ describe('AuthService', () => {
         UnauthorizedException,
       );
       expect(jwtServiceMock.sign).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('password reset', () => {
+    it('always reports success when requesting a reset', async () => {
+      passwordResetServiceMock.requestPasswordReset.mockResolvedValue(
+        undefined,
+      );
+
+      await expect(
+        service.requestPasswordReset({ email: ' Nobody@Example.com ' }),
+      ).resolves.toBe(true);
+      expect(
+        passwordResetServiceMock.requestPasswordReset,
+      ).toHaveBeenCalledWith('nobody@example.com');
+    });
+
+    it('sets the new password for a valid token', async () => {
+      passwordServiceMock.hash.mockResolvedValue('new-hash');
+      usersServiceMock.resetPasswordWithToken.mockResolvedValue(true);
+
+      await expect(
+        service.resetPassword({ token: 'tok', newPassword: 'newpassword1' }),
+      ).resolves.toBe(true);
+      expect(usersServiceMock.resetPasswordWithToken).toHaveBeenCalledWith(
+        hashPasswordResetToken('tok'),
+        'new-hash',
+      );
+    });
+
+    it('rejects invalid or expired tokens', async () => {
+      passwordServiceMock.hash.mockResolvedValue('new-hash');
+      usersServiceMock.resetPasswordWithToken.mockResolvedValue(false);
+
+      await expect(
+        service.resetPassword({ token: 'tok', newPassword: 'newpassword1' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 

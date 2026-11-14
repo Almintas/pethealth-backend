@@ -6,6 +6,8 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { ChangePasswordInput } from './dto/change-password.input';
 import { LoginInput } from './dto/login.input';
 import { RegisterInput } from './dto/register.input';
+import { RequestPasswordResetInput } from './dto/request-password-reset.input';
+import { ResetPasswordInput } from './dto/reset-password.input';
 import { UpdateNotificationPreferencesInput } from './dto/update-notification-preferences.input';
 import { UpdateProfileInput } from './dto/update-profile.input';
 import { GqlAuthGuard } from './guards/gql-auth.guard';
@@ -67,6 +69,28 @@ export class AuthResolver {
     return this.authService.login(input);
   }
 
+  @Mutation(() => Boolean, {
+    name: 'requestPasswordReset',
+    description:
+      'Email a single-use link to reset the password, or to activate an account created by a clinic. Always returns true.',
+  })
+  @AuthRateLimit()
+  requestPasswordReset(
+    @Args('input') input: RequestPasswordResetInput,
+  ): Promise<boolean> {
+    return this.authService.requestPasswordReset(input);
+  }
+
+  @Mutation(() => Boolean, {
+    name: 'resetPassword',
+    description:
+      'Set a new password using the emailed token. Signs out all existing sessions.',
+  })
+  @AuthRateLimit()
+  resetPassword(@Args('input') input: ResetPasswordInput): Promise<boolean> {
+    return this.authService.resetPassword(input);
+  }
+
   @Query(() => UserModel, {
     name: 'me',
     description: 'Returns the currently authenticated user',
@@ -90,7 +114,8 @@ export class AuthResolver {
 
   @Mutation(() => Boolean, {
     name: 'changePassword',
-    description: 'Change password for the authenticated user',
+    description:
+      'Change password for the authenticated user. Revokes all existing access tokens (including the current one); log in again with the new password.',
   })
   @UseGuards(GqlAuthGuard)
   changePassword(

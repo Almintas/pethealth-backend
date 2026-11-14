@@ -210,11 +210,9 @@ export class PetsService {
     const pet = await this.findOwnedPetDocument(ownerId, petId);
     const photoStorageKey = pet.photoStorageKey;
 
-    /*
-     * Soft-delete the pet first so it disappears for the owner even if a
-     * later cleanup step fails. Related records are only reachable through an
-     * active pet, so leftovers from a failed cleanup are never exposed.
-     */
+    // Soft-delete first: once this succeeds the pet and everything attached to
+    // it is hidden everywhere (all reads filter on active pets), so a failure
+    // in the cleanup below can never leave a half-deleted pet visible.
     try {
       pet.deletedAt = new Date();
       pet.photoUrl = undefined;
@@ -228,15 +226,25 @@ export class PetsService {
       await this.deletePetRelatedRecords(pet._id);
     } catch (error: unknown) {
       this.logger.error(
-        `Failed to delete related records for pet ${pet._id.toString()}`,
-        error instanceof Error ? error.stack : undefined,
+        `Pet ${pet._id.toString()} deleted but related record cleanup failed: ${this.errorMessage(error)}`,
       );
     }
 
     if (photoStorageKey) {
-      await this.petPhotoStorage.deletePetPhoto(photoStorageKey);
+      try {
+        await this.petPhotoStorage.deletePetPhoto(photoStorageKey);
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Pet ${pet._id.toString()} deleted but photo cleanup failed: ${this.errorMessage(error)}`,
+        );
+      }
     }
+
     return true;
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private async deletePetRelatedRecords(

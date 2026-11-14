@@ -169,14 +169,19 @@ export class AccountActivationService {
       .deleteMany({ userId: record.userId, usedAt: null })
       .exec();
 
-    const user = await this.usersService.findById(userId);
-    if (!user) {
+    const authState = await this.usersService.findAuthStateById(userId);
+    if (!authState) {
       throw new BadRequestException(
         AccountActivationService.INVALID_TOKEN_MESSAGE,
       );
     }
 
-    const payload: JwtPayload = { sub: user.id, role: user.role };
+    const { user, tokenVersion } = authState;
+    const payload: JwtPayload = {
+      sub: user.id,
+      role: user.role,
+      tv: tokenVersion,
+    };
     return { accessToken: this.jwtService.sign(payload), user };
   }
 
