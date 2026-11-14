@@ -10,7 +10,10 @@ import {
 import { Pet, PetDocument } from '../pets/schemas/pet.schema';
 import { ReminderStatus } from '../reminders/enums/reminder-status.enum';
 import { ReminderType } from '../reminders/enums/reminder-type.enum';
-import { Reminder, ReminderDocument } from '../reminders/schemas/reminder.schema';
+import {
+  Reminder,
+  ReminderDocument,
+} from '../reminders/schemas/reminder.schema';
 import { resolveNotificationPreferences } from '../users/notification-preferences.util';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { EmailService } from './email.service';
@@ -81,11 +84,16 @@ export class NotificationEmailDispatcher {
   }
 
   private async processAppointmentReminders(now: Date): Promise<void> {
-    const catchupStart = new Date(now.getTime() - MAX_CATCHUP_MS);
+    /*
+     * A reminder is due once the appointment is in the future but no more
+     * than 24h away. Filtering in the query avoids loading every future
+     * appointment on each scheduler tick.
+     */
+    const windowEnd = new Date(now.getTime() + APPOINTMENT_REMINDER_LEAD_MS);
     const appointments = await this.appointmentModel
       .find({
         status: AppointmentStatus.SCHEDULED,
-        scheduledAt: { $gt: now },
+        scheduledAt: { $gt: now, $lte: windowEnd },
       })
       .exec();
 
@@ -93,10 +101,6 @@ export class NotificationEmailDispatcher {
       const scheduledFor = new Date(
         appointment.scheduledAt.getTime() - APPOINTMENT_REMINDER_LEAD_MS,
       );
-
-      if (scheduledFor > now || scheduledFor < catchupStart) {
-        continue;
-      }
 
       const pet = await this.petModel.findById(appointment.petId).exec();
       if (!pet || pet.deletedAt) {
@@ -108,7 +112,9 @@ export class NotificationEmailDispatcher {
         continue;
       }
 
-      const prefs = resolveNotificationPreferences(user.notificationPreferences);
+      const prefs = resolveNotificationPreferences(
+        user.notificationPreferences,
+      );
       if (!prefs.emailAppointmentReminders) {
         continue;
       }
@@ -188,7 +194,9 @@ export class NotificationEmailDispatcher {
         continue;
       }
 
-      const prefs = resolveNotificationPreferences(user.notificationPreferences);
+      const prefs = resolveNotificationPreferences(
+        user.notificationPreferences,
+      );
       const enabled =
         reminderType === ReminderType.MEDICATION
           ? prefs.emailMedicationReminders
@@ -277,7 +285,10 @@ export class NotificationEmailDispatcher {
       });
 
       if (result.ok) {
-        await this.deliveryService.markSent(params.deliveryKey, result.messageId);
+        await this.deliveryService.markSent(
+          params.deliveryKey,
+          result.messageId,
+        );
         return;
       }
 
@@ -287,7 +298,9 @@ export class NotificationEmailDispatcher {
       );
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : 'Unexpected email dispatch error';
+        error instanceof Error
+          ? error.message
+          : 'Unexpected email dispatch error';
       this.logger.error(`Notification dispatch failed: ${message}`);
       await this.deliveryService.markFailed(params.deliveryKey, message);
     }

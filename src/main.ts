@@ -5,6 +5,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { resolveCorsOrigins } from './config/cors.config';
 import { Environment } from './config/env.validation';
+import { resolveTrustProxy } from './config/trust-proxy.config';
 import { applyHttpSecurityMiddleware } from './http-security.config';
 
 async function bootstrap(): Promise<void> {
@@ -15,10 +16,14 @@ async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
   const configService = app.get(ConfigService);
 
-  applyHttpSecurityMiddleware(app);
-
   const nodeEnv =
     configService.get<Environment>('NODE_ENV') ?? Environment.Development;
+
+  app.set(
+    'trust proxy',
+    resolveTrustProxy(configService.get<string>('TRUST_PROXY'), nodeEnv),
+  );
+  applyHttpSecurityMiddleware(app);
   const corsOrigins = resolveCorsOrigins(
     configService.get<string>('CORS_ORIGIN'),
     nodeEnv,

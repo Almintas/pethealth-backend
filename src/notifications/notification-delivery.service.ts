@@ -11,6 +11,8 @@ import {
 
 const RETRY_MIN_INTERVAL_MS = 60 * 60 * 1000;
 const MAX_ATTEMPTS = 8;
+/** A PENDING delivery older than this is treated as abandoned and retried. */
+const STALE_PENDING_MS = 30 * 60 * 1000;
 
 export function buildDeliveryKey(
   channel: NotificationChannel,
@@ -42,29 +44,29 @@ export class NotificationDeliveryService {
       .findOne({ deliveryKey: params.deliveryKey })
       .exec();
 
-    if (existing?.status === NotificationDeliveryStatus.SENT) {
-      return 'skip';
-    }
-
-    if (existing?.status === NotificationDeliveryStatus.FAILED) {
-      const tooSoon =
-        Date.now() - existing.updatedAt.getTime() < RETRY_MIN_INTERVAL_MS;
-      if (tooSoon || existing.attemptCount >= MAX_ATTEMPTS) {
+    if (existing) {
+      if (!this.isRetryable(existing)) {
         return 'skip';
       }
-    }
-
-    if (existing) {
-      await this.deliveryModel
-        .updateOne(
-          { _id: existing._id },
+      /*
+       * Claim the delivery atomically: the filter only matches if nobody else
+       * (another tick or another instance) changed the record since we read it.
+       */
+      const claimed = await this.deliveryModel
+        .findOneAndUpdate(
+          {
+            _id: existing._id,
+            status: existing.status,
+            attemptCount: existing.attemptCount,
+          },
           {
             $set: { status: NotificationDeliveryStatus.PENDING },
             $inc: { attemptCount: 1 },
           },
+          { new: true },
         )
         .exec();
-      return 'send';
+      return claimed ? 'send' : 'skip';
     }
 
     try {
@@ -93,7 +95,29 @@ export class NotificationDeliveryService {
     }
   }
 
-  async markSent(deliveryKey: string, providerMessageId: string): Promise<void> {
+  private isRetryable(existing: NotificationDeliveryDocument): boolean {
+    if (existing.status === NotificationDeliveryStatus.SENT) {
+      return false;
+    }
+    if (existing.attemptCount >= MAX_ATTEMPTS) {
+      return false;
+    }
+    const sinceLastUpdateMs = Date.now() - existing.updatedAt.getTime();
+    if (existing.status === NotificationDeliveryStatus.FAILED) {
+      return sinceLastUpdateMs >= RETRY_MIN_INTERVAL_MS;
+    }
+    /*
+     * PENDING means a send is in flight (or the process died mid-send). Only
+     * retry once the claim is clearly stale, otherwise every scheduler tick
+     * would re-send the same email.
+     */
+    return sinceLastUpdateMs >= STALE_PENDING_MS;
+  }
+
+  async markSent(
+    deliveryKey: string,
+    providerMessageId: string,
+  ): Promise<void> {
     await this.deliveryModel
       .updateOne(
         { deliveryKey },
@@ -102,8 +126,8 @@ export class NotificationDeliveryService {
             status: NotificationDeliveryStatus.SENT,
             sentAt: new Date(),
             providerMessageId,
-            lastError: undefined,
           },
+          $unset: { lastError: 1 },
         },
       )
       .exec();
