@@ -1,0 +1,113 @@
+name: Integration (owner + clinic API)
+
+# Runs both backends against a real MongoDB and walks through the main
+# cross-service flows (test/integration/full-flow.mjs in pethealth-vet-backend).
+# The same workflow lives in pethealth-backend and pethealth-vet-backend; each
+# tests its own push against the other repository's dev branch.
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OWNER_SERVICE_SECRET: ci-owner-service-secret-at-least-32-chars
+  OWNER_MONGODB_URI: mongodb://localhost:27017/pethealth_ci_owner
+  VET_MONGODB_URI: mongodb://localhost:27017/pethealth_ci_vet
+
+jobs:
+  full-flow:
+    name: Full flow across both APIs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout owner API (this repository)
+        uses: actions/checkout@v4
+        with:
+          path: owner
+
+      - name: Checkout clinic API (dev)
+        uses: actions/checkout@v4
+        with:
+          repository: Almintas/pethealth-vet-backend
+          ref: dev
+          path: vet
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            owner/package-lock.json
+            vet/package-lock.json
+
+      - name: Build owner API
+        working-directory: owner
+        run: npm ci && npm run build
+
+      - name: Build clinic API
+        working-directory: vet
+        run: npm ci && npm run build
+
+      - name: Start owner API
+        working-directory: owner
+        env:
+          NODE_ENV: development
+          PORT: '3000'
+          MONGODB_URI: ${{ env.OWNER_MONGODB_URI }}
+          JWT_SECRET: ci-owner-jwt-secret-with-sufficient-length
+          VET_GRAPHQL_URL: http://localhost:3001/graphql
+          FRONTEND_URL: http://localhost:5173
+          THROTTLE_AUTH_LIMIT: '100'
+        run: nohup npm run start:prod > "$RUNNER_TEMP/owner.log" 2>&1 &
+
+      - name: Start clinic API
+        working-directory: vet
+        env:
+          NODE_ENV: development
+          PORT: '3001'
+          MONGODB_URI: ${{ env.VET_MONGODB_URI }}
+          JWT_SECRET: ci-vet-jwt-secret-with-sufficient-length
+          OWNER_GRAPHQL_URL: http://localhost:3000/graphql
+          VET_FRONTEND_URL: http://localhost:5174
+        run: nohup npm run start:prod > "$RUNNER_TEMP/vet.log" 2>&1 &
+
+      - name: Run full flow
+        working-directory: vet
+        env:
+          OWNER_GRAPHQL_URL: http://localhost:3000/graphql
+          VET_GRAPHQL_URL: http://localhost:3001/graphql
+          MONGODB_URI: ${{ env.VET_MONGODB_URI }}
+        run: node test/integration/full-flow.mjs
+
+      - name: Show API logs
+        if: always()
+        run: |
+          echo "::group::Owner API log"
+          cat "$RUNNER_TEMP/owner.log" || true
+          echo "::endgroup::"
+          echo "::group::Clinic API log"
+          cat "$RUNNER_TEMP/vet.log" || true
+          echo "::endgroup::"
