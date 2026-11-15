@@ -125,9 +125,18 @@ instead of silently moving, because CORS and email links expect these ports.
 
 3. Back in the clinic app, press **Check again** (or sign in again).
 
-### 5. Seed the demo clinic
+Or approve in the app: make one account a PetHealth platform admin, then use
+its **Vet approvals** page (`/admin/veterinarians`). Platform admins have no
+clinic or patient access.
 
-There is no "create clinic" screen yet. To give the vet a clinic, run in
+```bash
+npm run admin:grant -- admin@pethealth.lt   # in pethealth-vet-backend; register the account first
+```
+
+### 5. Create a clinic
+
+An approved vet without a clinic sees **Create your clinic** on the dashboard
+and on *My clinic*. For a quick demo setup you can instead run, in
 `pethealth-vet-backend`:
 
 ```bash
@@ -149,6 +158,9 @@ command if your database differs, e.g.
   The owner gets an activation email. Without `RESEND_API_KEY`, the owner API
   prints the activation link in its console instead (development only); open
   it to set a password at `/activate-account`.
+- **Activity log**: every view (at most once per 30 minutes per person) and
+  every change a clinic makes is recorded. The owner sees it on the pet page
+  under *Activity log*.
 - **Existing owner shares a pet**: in the owner portal open a pet →
   *Clinic access* → *Create code for clinic*. In the clinic app use
   *Add by owner code*. Codes are single-use and valid for 15 minutes; the
