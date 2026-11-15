@@ -5,6 +5,7 @@ import { Model, Types } from 'mongoose';
 import { InternalPetsService } from '../internal-services/internal-pets.service';
 import { InternalPetForVet } from '../internal-services/models/internal-pet-for-vet.model';
 import { PetOwnershipService } from '../pets/pet-ownership.service';
+import { PetActivityEventModel } from './models/pet-activity-event.model';
 import { PetClinicAccessModel } from './models/pet-clinic-access.model';
 import { PetShareCodeModel } from './models/pet-share-code.model';
 import {
@@ -25,6 +26,8 @@ const CODE_LENGTH = 8;
 @Injectable()
 export class ClinicAccessService {
   static readonly CODE_TTL_MS = 15 * 60 * 1000;
+  static readonly DEFAULT_ACTIVITY_LIMIT = 50;
+  static readonly MAX_ACTIVITY_LIMIT = 200;
   static readonly INVALID_CODE_MESSAGE =
     'This code is invalid or has expired. Ask the owner to generate a new one.';
 
@@ -119,6 +122,33 @@ export class ClinicAccessService {
   ): Promise<boolean> {
     await this.petOwnershipService.assertPetBelongsToOwner(ownerId, petId);
     return this.vetBackendClient.revokeClinicAccess(petId, clinicId);
+  }
+
+  /** Newest-first log of what clinics did with the pet's data. */
+  async listActivity(
+    ownerId: string,
+    petId: string,
+    limit = ClinicAccessService.DEFAULT_ACTIVITY_LIMIT,
+  ): Promise<PetActivityEventModel[]> {
+    await this.petOwnershipService.assertPetBelongsToOwner(ownerId, petId);
+    const safeLimit = Math.min(
+      Math.max(Math.trunc(limit) || 1, 1),
+      ClinicAccessService.MAX_ACTIVITY_LIMIT,
+    );
+    const events = await this.vetBackendClient.listAuditEventsForPet(
+      petId,
+      safeLimit,
+    );
+    return events.map((event) => ({
+      id: event.id,
+      action: event.action,
+      entityType: event.entityType,
+      actorType: event.actorType,
+      actorName: event.actorName ?? null,
+      clinicName: event.clinicName ?? null,
+      summary: event.summary ?? null,
+      createdAt: new Date(event.createdAt),
+    }));
   }
 
   private generateCode(): string {

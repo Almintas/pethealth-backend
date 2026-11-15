@@ -26,6 +26,7 @@ describe('ClinicAccessService', () => {
   const vetBackendClient = {
     listClinicAccessForPet: jest.fn(),
     revokeClinicAccess: jest.fn(),
+    listAuditEventsForPet: jest.fn(),
   };
 
   const sha256 = (value: string) =>
@@ -170,5 +171,52 @@ describe('ClinicAccessService', () => {
       petId,
       vetClinicId,
     );
+  });
+
+  it('lists pet activity for the owner with a capped limit', async () => {
+    vetBackendClient.listAuditEventsForPet.mockResolvedValue([
+      {
+        id: 'event-1',
+        action: 'CREATED',
+        entityType: 'VACCINATION',
+        actorType: 'CLINIC_USER',
+        actorName: 'Ona Vet',
+        clinicName: 'Vet Clinic',
+        summary: 'Rabies',
+        createdAt: '2026-11-15T10:00:00.000Z',
+      },
+    ]);
+
+    const events = await service.listActivity(ownerId, petId, 10_000);
+
+    expect(petOwnershipService.assertPetBelongsToOwner).toHaveBeenCalledWith(
+      ownerId,
+      petId,
+    );
+    expect(vetBackendClient.listAuditEventsForPet).toHaveBeenCalledWith(
+      petId,
+      200,
+    );
+    expect(events[0]).toEqual({
+      id: 'event-1',
+      action: 'CREATED',
+      entityType: 'VACCINATION',
+      actorType: 'CLINIC_USER',
+      actorName: 'Ona Vet',
+      clinicName: 'Vet Clinic',
+      summary: 'Rabies',
+      createdAt: new Date('2026-11-15T10:00:00.000Z'),
+    });
+  });
+
+  it('does not reach the Vet backend for pets the user does not own', async () => {
+    petOwnershipService.assertPetBelongsToOwner.mockRejectedValueOnce(
+      new NotFoundException('Pet not found'),
+    );
+
+    await expect(service.listActivity(ownerId, petId)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(vetBackendClient.listAuditEventsForPet).not.toHaveBeenCalled();
   });
 });

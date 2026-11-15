@@ -1,9 +1,10 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, ID, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GqlAuthGuard } from '../auth/guards/gql-auth.guard';
 import { UserModel } from '../users/models/user.model';
 import { ClinicAccessService } from './clinic-access.service';
+import { PetActivityEventModel } from './models/pet-activity-event.model';
 import { PetClinicAccessModel } from './models/pet-clinic-access.model';
 import { PetShareCodeModel } from './models/pet-share-code.model';
 
@@ -33,6 +34,19 @@ export class ClinicAccessResolver {
     @Args('petId', { type: () => ID }) petId: string,
   ): Promise<PetClinicAccessModel[]> {
     return this.clinicAccessService.listClinicAccess(user.id, petId);
+  }
+
+  @Query(() => [PetActivityEventModel], {
+    name: 'petActivityLog',
+    description:
+      'Who viewed or changed this pet’s health data, newest first (max 200)',
+  })
+  petActivityLog(
+    @CurrentUser() user: UserModel,
+    @Args('petId', { type: () => ID }) petId: string,
+    @Args('limit', { type: () => Int, nullable: true }) limit?: number,
+  ): Promise<PetActivityEventModel[]> {
+    return this.clinicAccessService.listActivity(user.id, petId, limit);
   }
 
   @Mutation(() => Boolean, {
