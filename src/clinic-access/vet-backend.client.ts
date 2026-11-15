@@ -15,6 +15,17 @@ export type VetClinicAccess = {
   grantedAt: string;
 };
 
+export type VetAuditEvent = {
+  id: string;
+  action: string;
+  entityType: string;
+  actorType: string;
+  actorName?: string | null;
+  clinicName?: string | null;
+  summary?: string | null;
+  createdAt: string;
+};
+
 type VetGraphqlResponse<T> = {
   data?: T;
   errors?: { message: string }[];
@@ -48,6 +59,32 @@ export class VetBackendClient {
       { petId },
     );
     return data.internalClinicAccessForPet;
+  }
+
+  async listAuditEventsForPet(
+    petId: string,
+    limit: number,
+  ): Promise<VetAuditEvent[]> {
+    const data = await this.execute<{
+      internalAuditEventsForPet: VetAuditEvent[];
+    }>(
+      `
+        query InternalAuditEventsForPet($petId: ID!, $limit: Int) {
+          internalAuditEventsForPet(petId: $petId, limit: $limit) {
+            id
+            action
+            entityType
+            actorType
+            actorName
+            clinicName
+            summary
+            createdAt
+          }
+        }
+      `,
+      { petId, limit },
+    );
+    return data.internalAuditEventsForPet;
   }
 
   async revokeClinicAccess(petId: string, clinicId: string): Promise<boolean> {

@@ -17,7 +17,17 @@ export class InternalShareCodesResolver {
   internalRedeemPetShareCode(
     @Args('code') code: string,
     @Args('vetClinicId', { type: () => ID }) vetClinicId: string,
+    @Args('clinicName', {
+      type: () => String,
+      nullable: true,
+      description: 'Shown to the owner in the access notification email',
+    })
+    clinicName?: string | null,
   ): Promise<InternalPetForVet> {
-    return this.clinicAccessService.redeemShareCode(code, vetClinicId);
+    return this.clinicAccessService.redeemShareCode(
+      code,
+      vetClinicId,
+      clinicName,
+    );
   }
 }

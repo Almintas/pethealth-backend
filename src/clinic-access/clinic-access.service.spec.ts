@@ -1,9 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { createHash } from 'node:crypto';
 import { Types } from 'mongoose';
 import { InternalPetsService } from '../internal-services/internal-pets.service';
+import { EmailService } from '../notifications/email.service';
 import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { ClinicAccessService } from './clinic-access.service';
 import { PetShareCode } from './schemas/pet-share-code.schema';
@@ -26,6 +28,14 @@ describe('ClinicAccessService', () => {
   const vetBackendClient = {
     listClinicAccessForPet: jest.fn(),
     revokeClinicAccess: jest.fn(),
+    listAuditEventsForPet: jest.fn(),
+  };
+
+  const emailService = { send: jest.fn() };
+  const configService = {
+    get: jest.fn((key: string) =>
+      key === 'FRONTEND_URL' ? 'https://app.pethealth.test/' : undefined,
+    ),
   };
 
   const sha256 = (value: string) =>
@@ -33,6 +43,7 @@ describe('ClinicAccessService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    emailService.send.mockResolvedValue({ ok: true, messageId: 'm-1' });
     shareCodeModel.deleteMany.mockReturnValue({
       exec: jest.fn().mockResolvedValue({}),
     });
@@ -43,6 +54,8 @@ describe('ClinicAccessService', () => {
         { provide: PetOwnershipService, useValue: petOwnershipService },
         { provide: InternalPetsService, useValue: internalPetsService },
         { provide: VetBackendClient, useValue: vetBackendClient },
+        { provide: EmailService, useValue: emailService },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 
@@ -111,6 +124,45 @@ describe('ClinicAccessService', () => {
     expect(update.$set?.usedByVetClinicId).toBe(vetClinicId);
   });
 
+  function mockRedeemableCode() {
+    shareCodeModel.findOneAndUpdate.mockReturnValue({
+      exec: jest.fn().mockResolvedValue({
+        petId: new Types.ObjectId(petId),
+        ownerId: new Types.ObjectId(ownerId),
+      }),
+    });
+    internalPetsService.findActivePetsByIds.mockResolvedValue([
+      {
+        id: petId,
+        name: 'Luna',
+        owner: { id: ownerId, firstName: 'Jane', email: 'jane@example.com' },
+      },
+    ]);
+  }
+
+  it('emails the owner when a clinic redeems their code', async () => {
+    mockRedeemableCode();
+
+    await service.redeemShareCode('ABCD-2345', vetClinicId, 'Paws Clinic');
+
+    expect(emailService.send).toHaveBeenCalledTimes(1);
+    const [message] = emailService.send.mock.calls[0] as [
+      { to: string; subject: string; html: string; text: string },
+    ];
+    expect(message.to).toBe('jane@example.com');
+    expect(message.subject).toContain('Paws Clinic');
+    expect(message.text).toContain(`https://app.pethealth.test/pets/${petId}`);
+  });
+
+  it('still grants access when the notification email fails', async () => {
+    mockRedeemableCode();
+    emailService.send.mockRejectedValue(new Error('smtp down'));
+
+    await expect(
+      service.redeemShareCode('ABCD-2345', vetClinicId),
+    ).resolves.toMatchObject({ id: petId });
+  });
+
   it('rejects unknown, used or expired codes', async () => {
     shareCodeModel.findOneAndUpdate.mockReturnValue({
       exec: jest.fn().mockResolvedValue(null),
@@ -170,5 +222,52 @@ describe('ClinicAccessService', () => {
       petId,
       vetClinicId,
     );
+  });
+
+  it('lists pet activity for the owner with a capped limit', async () => {
+    vetBackendClient.listAuditEventsForPet.mockResolvedValue([
+      {
+        id: 'event-1',
+        action: 'CREATED',
+        entityType: 'VACCINATION',
+        actorType: 'CLINIC_USER',
+        actorName: 'Ona Vet',
+        clinicName: 'Vet Clinic',
+        summary: 'Rabies',
+        createdAt: '2026-11-15T10:00:00.000Z',
+      },
+    ]);
+
+    const events = await service.listActivity(ownerId, petId, 10_000);
+
+    expect(petOwnershipService.assertPetBelongsToOwner).toHaveBeenCalledWith(
+      ownerId,
+      petId,
+    );
+    expect(vetBackendClient.listAuditEventsForPet).toHaveBeenCalledWith(
+      petId,
+      200,
+    );
+    expect(events[0]).toEqual({
+      id: 'event-1',
+      action: 'CREATED',
+      entityType: 'VACCINATION',
+      actorType: 'CLINIC_USER',
+      actorName: 'Ona Vet',
+      clinicName: 'Vet Clinic',
+      summary: 'Rabies',
+      createdAt: new Date('2026-11-15T10:00:00.000Z'),
+    });
+  });
+
+  it('does not reach the Vet backend for pets the user does not own', async () => {
+    petOwnershipService.assertPetBelongsToOwner.mockRejectedValueOnce(
+      new NotFoundException('Pet not found'),
+    );
+
+    await expect(service.listActivity(ownerId, petId)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(vetBackendClient.listAuditEventsForPet).not.toHaveBeenCalled();
   });
 });
