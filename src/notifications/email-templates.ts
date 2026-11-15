@@ -189,6 +189,33 @@ export function buildAccountActivationEmail(params: {
   };
 }
 
+export function buildClinicAccessGrantedEmail(params: {
+  firstName: string;
+  petName: string;
+  clinicName?: string | null;
+  petUrl: string;
+}): { subject: string; html: string; text: string } {
+  const clinic = params.clinicName?.trim() || 'A veterinary clinic';
+  const bodyHtml = `
+    <p>Hi ${escapeHtml(params.firstName)},</p>
+    <p>${escapeHtml(clinic)} now has access to ${escapeHtml(params.petName)}'s health records in PetHealth, using the one-time code you created.</p>
+    <p>If this was you, there is nothing else to do. If you did not share a code with this clinic, open ${escapeHtml(params.petName)}'s page and revoke the clinic's access under Clinic access.</p>
+  `;
+
+  const { html, text } = layout({
+    title: 'A clinic can now access your pet',
+    bodyHtml,
+    ctaLabel: 'Review clinic access',
+    ctaUrl: params.petUrl,
+  });
+
+  return {
+    subject: `${clinic} can now access ${params.petName}'s records`,
+    html,
+    text,
+  };
+}
+
 export function buildPasswordResetEmail(params: {
   userName: string;
   resetUrl: string;
