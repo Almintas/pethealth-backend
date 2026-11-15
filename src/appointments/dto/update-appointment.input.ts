@@ -8,6 +8,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+import { IsOptionalNonNullable } from '../../common/validation/is-optional-non-nullable.decorator';
 import { AppointmentStatus } from '../enums/appointment-status.enum';
 
 const trimString = ({ value }: { value: unknown }): unknown =>
@@ -19,13 +20,13 @@ export class UpdateAppointmentInput {
     description: 'Scheduled date and time',
     nullable: true,
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @Type(() => Date)
   @IsDate()
   scheduledAt?: Date;
 
   @Field(() => String, { description: 'Appointment type', nullable: true })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
@@ -64,7 +65,7 @@ export class UpdateAppointmentInput {
     description: 'Appointment status',
     nullable: true,
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsEnum(AppointmentStatus)
   status?: AppointmentStatus;
 }

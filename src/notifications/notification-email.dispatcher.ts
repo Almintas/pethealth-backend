@@ -84,11 +84,16 @@ export class NotificationEmailDispatcher {
   }
 
   private async processAppointmentReminders(now: Date): Promise<void> {
-    const catchupStart = new Date(now.getTime() - MAX_CATCHUP_MS);
+    /*
+     * A reminder is due once the appointment is in the future but no more
+     * than 24h away. Filtering in the query avoids loading every future
+     * appointment on each scheduler tick.
+     */
+    const windowEnd = new Date(now.getTime() + APPOINTMENT_REMINDER_LEAD_MS);
     const appointments = await this.appointmentModel
       .find({
         status: AppointmentStatus.SCHEDULED,
-        scheduledAt: { $gt: now },
+        scheduledAt: { $gt: now, $lte: windowEnd },
       })
       .exec();
 
@@ -96,10 +101,6 @@ export class NotificationEmailDispatcher {
       const scheduledFor = new Date(
         appointment.scheduledAt.getTime() - APPOINTMENT_REMINDER_LEAD_MS,
       );
-
-      if (scheduledFor > now || scheduledFor < catchupStart) {
-        continue;
-      }
 
       const pet = await this.petModel.findById(appointment.petId).exec();
       if (!pet || pet.deletedAt) {

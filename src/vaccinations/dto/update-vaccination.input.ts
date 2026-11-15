@@ -7,6 +7,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+import { IsOptionalNonNullable } from '../../common/validation/is-optional-non-nullable.decorator';
 
 const trimString = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -14,7 +15,7 @@ const trimString = ({ value }: { value: unknown }): unknown =>
 @InputType({ description: 'Input for updating a vaccination record' })
 export class UpdateVaccinationInput {
   @Field(() => String, { description: 'Name of the vaccine', nullable: true })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
@@ -25,7 +26,7 @@ export class UpdateVaccinationInput {
     description: 'When the vaccine was administered',
     nullable: true,
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @Type(() => Date)
   @IsDate()
   administeredAt?: Date;

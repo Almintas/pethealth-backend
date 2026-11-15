@@ -28,6 +28,7 @@ describe('AuthService', () => {
   const passwordServiceMock = {
     hash: jest.fn(),
     compare: jest.fn(),
+    compareAgainstDummy: jest.fn(),
   };
 
   const jwtServiceMock = {
@@ -202,6 +203,9 @@ describe('AuthService', () => {
         UnauthorizedException,
       );
       expect(passwordServiceMock.compare).not.toHaveBeenCalled();
+      expect(passwordServiceMock.compareAgainstDummy).toHaveBeenCalledWith(
+        loginInput.password,
+      );
       expect(jwtServiceMock.sign).not.toHaveBeenCalled();
     });
 

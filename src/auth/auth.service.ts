@@ -72,6 +72,7 @@ export class AuthService {
     );
 
     if (!authRecord) {
+      await this.passwordService.compareAgainstDummy(dto.password);
       this.logger.warn('Failed login attempt (user not found)');
       throw new UnauthorizedException('Invalid credentials');
     }

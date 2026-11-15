@@ -76,6 +76,7 @@ These tune rate limiting (defaults apply if omitted):
 | `THROTTLE_TTL_MS` | Global window length in milliseconds. |
 | `THROTTLE_AUTH_LIMIT` | Stricter limit for `login` and `register` mutations. |
 | `THROTTLE_AUTH_TTL_MS` | Auth window length in milliseconds. |
+| `TRUST_PROXY` | Express `trust proxy` setting used to resolve the client IP for rate limiting. Defaults to `1` (one load-balancer hop) in production and off elsewhere. Set `false` if the API is exposed directly, or a higher hop count if several proxies sit in front of it. |
 
 See `.env.example` for local development examples.
 

@@ -7,6 +7,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+import { IsOptionalNonNullable } from '../../common/validation/is-optional-non-nullable.decorator';
 
 const trimString = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -17,7 +18,7 @@ export class UpdateMedicalRecordInput {
     description: 'Date of the medical event',
     nullable: true,
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @Type(() => Date)
   @IsDate()
   date?: Date;
@@ -26,7 +27,7 @@ export class UpdateMedicalRecordInput {
     description: 'Type of medical record',
     nullable: true,
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
@@ -34,7 +35,7 @@ export class UpdateMedicalRecordInput {
   type?: string;
 
   @Field(() => String, { description: 'Record title', nullable: true })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)

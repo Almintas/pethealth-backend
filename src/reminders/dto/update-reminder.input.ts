@@ -8,6 +8,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+import { IsOptionalNonNullable } from '../../common/validation/is-optional-non-nullable.decorator';
 import { ReminderType } from '../enums/reminder-type.enum';
 
 const trimString = ({ value }: { value: unknown }): unknown =>
@@ -19,12 +20,12 @@ export class UpdateReminderInput {
     description: 'Reminder category',
     nullable: true,
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsEnum(ReminderType)
   type?: ReminderType;
 
   @Field(() => String, { description: 'Reminder title', nullable: true })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
@@ -42,7 +43,7 @@ export class UpdateReminderInput {
     description: 'When the reminder is due',
     nullable: true,
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @Type(() => Date)
   @IsDate()
   dueAt?: Date;

@@ -46,6 +46,14 @@ export class EnvironmentVariables {
   @IsOptional()
   CORS_ORIGIN?: string;
 
+  /**
+   * Express `trust proxy` setting (true/false, hop count, or address list).
+   * Defaults to 1 hop in production so rate limits apply per client IP.
+   */
+  @IsString()
+  @IsOptional()
+  TRUST_PROXY?: string;
+
   /** Default API rate limit: max requests per TTL window (all routes). */
   @IsInt()
   @Min(1)
