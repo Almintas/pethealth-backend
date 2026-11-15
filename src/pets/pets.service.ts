@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -42,6 +43,8 @@ import { Pet, PetDocument } from './schemas/pet.schema';
 
 @Injectable()
 export class PetsService {
+  private readonly logger = new Logger(PetsService.name);
+
   constructor(
     @InjectModel(Pet.name) private readonly petModel: Model<PetDocument>,
     @Inject(PET_PHOTO_STORAGE)
@@ -190,19 +193,35 @@ export class PetsService {
 
   async deletePet(ownerId: string, petId: string): Promise<boolean> {
     const pet = await this.findOwnedPetDocument(ownerId, petId);
+    const photoStorageKey = pet.photoStorageKey;
 
+    /*
+     * Soft-delete the pet first so it disappears for the owner even if a
+     * later cleanup step fails. Related records are only reachable through an
+     * active pet, so leftovers from a failed cleanup are never exposed.
+     */
     try {
-      if (pet.photoStorageKey) {
-        await this.petPhotoStorage.deletePetPhoto(pet.photoStorageKey);
-      }
-
-      await this.deletePetRelatedRecords(pet._id);
       pet.deletedAt = new Date();
+      pet.photoUrl = undefined;
+      pet.photoStorageKey = undefined;
       await pet.save();
-      return true;
     } catch {
       throw new InternalServerErrorException('Failed to delete pet');
     }
+
+    try {
+      await this.deletePetRelatedRecords(pet._id);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Failed to delete related records for pet ${pet._id.toString()}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+
+    if (photoStorageKey) {
+      await this.petPhotoStorage.deletePetPhoto(photoStorageKey);
+    }
+    return true;
   }
 
   private async deletePetRelatedRecords(

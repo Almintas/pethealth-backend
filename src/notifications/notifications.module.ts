@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Appointment, AppointmentSchema } from '../appointments/schemas/appointment.schema';
+import {
+  Appointment,
+  AppointmentSchema,
+} from '../appointments/schemas/appointment.schema';
 import { Pet, PetSchema } from '../pets/schemas/pet.schema';
 import { Reminder, ReminderSchema } from '../reminders/schemas/reminder.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';

@@ -10,6 +10,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { IsOptionalNonNullable } from '../../common/validation/is-optional-non-nullable.decorator';
 
 const trimString = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -17,7 +18,7 @@ const trimString = ({ value }: { value: unknown }): unknown =>
 @InputType({ description: 'Input for updating a medication record' })
 export class UpdateMedicationInput {
   @Field(() => String, { description: 'Medication name', nullable: true })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
@@ -25,13 +26,13 @@ export class UpdateMedicationInput {
   name?: string;
 
   @Field(() => Number, { description: 'Dosage amount', nullable: true })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsNumber()
   @Min(0)
   dosage?: number;
 
   @Field(() => String, { description: 'Dosage unit', nullable: true })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
@@ -39,7 +40,7 @@ export class UpdateMedicationInput {
   dosageUnit?: string;
 
   @Field(() => String, { description: 'Dosing frequency', nullable: true })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
@@ -50,7 +51,7 @@ export class UpdateMedicationInput {
     description: 'Treatment start date',
     nullable: true,
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @Type(() => Date)
   @IsDate()
   startDate?: Date;
@@ -89,7 +90,7 @@ export class UpdateMedicationInput {
     description: 'Whether the medication is active',
     nullable: true,
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsBoolean()
   isActive?: boolean;
 }

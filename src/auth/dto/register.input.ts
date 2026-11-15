@@ -7,6 +7,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { PASSWORD_MAX_LENGTH } from '../constants/password-policy';
 
 @InputType({ description: 'Input for registering a new user account' })
 export class RegisterInput {
@@ -20,6 +21,9 @@ export class RegisterInput {
   @Field(() => String, { description: 'Account password (min 8 characters)' })
   @IsString()
   @MinLength(8)
+  @MaxLength(PASSWORD_MAX_LENGTH, {
+    message: `Password must be at most ${PASSWORD_MAX_LENGTH} characters`,
+  })
   password!: string;
 
   @Field(() => String, { description: 'Given name' })

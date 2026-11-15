@@ -108,7 +108,10 @@ export class UsersService {
       throw new BadRequestException('Invalid user id');
     }
 
-    const user = await this.userModel.findById(id).select('+passwordHash').exec();
+    const user = await this.userModel
+      .findById(id)
+      .select('+passwordHash')
+      .exec();
 
     if (!user?.passwordHash) {
       return null;
@@ -187,7 +190,9 @@ export class UsersService {
       throw new BadRequestException('User not found');
     }
 
-    const current = resolveNotificationPreferences(user.notificationPreferences);
+    const current = resolveNotificationPreferences(
+      user.notificationPreferences,
+    );
 
     user.notificationPreferences = {
       emailAppointmentReminders:
@@ -202,7 +207,10 @@ export class UsersService {
     return this.toUserModel(user);
   }
 
-  async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
+  async updatePasswordHash(
+    userId: string,
+    passwordHash: string,
+  ): Promise<void> {
     if (!isValidObjectId(userId)) {
       throw new BadRequestException('Invalid user id');
     }

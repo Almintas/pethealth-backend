@@ -61,8 +61,7 @@ export class NotificationDelivery {
   updatedAt!: Date;
 }
 
-export const NotificationDeliverySchema = SchemaFactory.createForClass(
-  NotificationDelivery,
-);
+export const NotificationDeliverySchema =
+  SchemaFactory.createForClass(NotificationDelivery);
 
 NotificationDeliverySchema.index({ status: 1, scheduledFor: 1 });

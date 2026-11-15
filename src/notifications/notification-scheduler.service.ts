@@ -14,7 +14,9 @@ export class NotificationSchedulerService {
   @Cron(CronExpression.EVERY_10_MINUTES)
   async handleScheduledNotifications(): Promise<void> {
     if (this.running) {
-      this.logger.debug('Notification scheduler already running; skipping tick.');
+      this.logger.debug(
+        'Notification scheduler already running; skipping tick.',
+      );
       return;
     }
 

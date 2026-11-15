@@ -3,11 +3,11 @@ import { Transform } from 'class-transformer';
 import {
   IsEmail,
   IsNotEmpty,
-  IsOptional,
   IsString,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { IsOptionalNonNullable } from '../../common/validation/is-optional-non-nullable.decorator';
 
 @InputType({ description: 'Update the authenticated user profile' })
 export class UpdateProfileInput {
@@ -15,7 +15,7 @@ export class UpdateProfileInput {
     nullable: true,
     description: 'Given name',
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsString()
   @IsNotEmpty()
   @MinLength(1)
@@ -29,7 +29,7 @@ export class UpdateProfileInput {
     nullable: true,
     description: 'Family name',
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsString()
   @IsNotEmpty()
   @MinLength(1)
@@ -43,7 +43,7 @@ export class UpdateProfileInput {
     nullable: true,
     description: 'Unique email address',
   })
-  @IsOptional()
+  @IsOptionalNonNullable()
   @IsEmail()
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
