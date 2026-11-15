@@ -158,12 +158,19 @@ command if your database differs, e.g.
   The owner gets an activation email. Without `RESEND_API_KEY`, the owner API
   prints the activation link in its console instead (development only); open
   it to set a password at `/activate-account`.
+- **Clinic team**: on *My clinic*, a clinic administrator invites colleagues by
+  email (veterinarian, receptionist or administrator). The invitee opens the
+  link (`/invite`) and joins with an existing account or creates one;
+  receptionists are approved at once, vets still need PetHealth approval.
+  Without Resend configured, the link is printed in the clinic API log and
+  shown to the admin to copy.
 - **Activity log**: every view (at most once per 30 minutes per person) and
   every change a clinic makes is recorded. The owner sees it on the pet page
   under *Activity log*.
 - **Existing owner shares a pet**: in the owner portal open a pet →
   *Clinic access* → *Create code for clinic*. In the clinic app use
   *Add by owner code*. Codes are single-use and valid for 15 minutes; the
-  owner can revoke access at any time.
+  owner gets an email saying which clinic now has access and can revoke it
+  at any time.
 - Records, vaccinations, medications and appointments added by the clinic
   appear in the owner portal.
