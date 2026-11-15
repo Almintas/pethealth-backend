@@ -10,7 +10,7 @@ describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
 
   const usersServiceMock = {
-    findById: jest.fn(),
+    findAuthStateById: jest.fn(),
   };
 
   const user: UserModel = {
@@ -56,16 +56,44 @@ describe('JwtStrategy', () => {
   });
 
   it('returns the authenticated user for a valid payload', async () => {
-    usersServiceMock.findById.mockResolvedValue(user);
+    usersServiceMock.findAuthStateById.mockResolvedValue({
+      user,
+      tokenVersion: 0,
+    });
 
     await expect(
       strategy.validate({ sub: user.id, role: user.role }),
     ).resolves.toEqual(user);
-    expect(usersServiceMock.findById).toHaveBeenCalledWith(user.id);
+    expect(usersServiceMock.findAuthStateById).toHaveBeenCalledWith(user.id);
+  });
+
+  it('accepts tokens carrying the current token version', async () => {
+    usersServiceMock.findAuthStateById.mockResolvedValue({
+      user,
+      tokenVersion: 2,
+    });
+
+    await expect(
+      strategy.validate({ sub: user.id, role: user.role, tv: 2 }),
+    ).resolves.toEqual(user);
+  });
+
+  it('rejects tokens issued before the password changed', async () => {
+    usersServiceMock.findAuthStateById.mockResolvedValue({
+      user,
+      tokenVersion: 1,
+    });
+
+    await expect(
+      strategy.validate({ sub: user.id, role: user.role }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(
+      strategy.validate({ sub: user.id, role: user.role, tv: 0 }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('rejects tokens when the user no longer exists', async () => {
-    usersServiceMock.findById.mockResolvedValue(null);
+    usersServiceMock.findAuthStateById.mockResolvedValue(null);
 
     await expect(
       strategy.validate({ sub: user.id, role: user.role }),

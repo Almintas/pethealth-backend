@@ -19,10 +19,12 @@ async function bootstrap(): Promise<void> {
   const nodeEnv =
     configService.get<Environment>('NODE_ENV') ?? Environment.Development;
 
+  // Must be set before any middleware reads req.ip (rate limiting).
   app.set(
     'trust proxy',
     resolveTrustProxy(configService.get<string>('TRUST_PROXY'), nodeEnv),
   );
+
   applyHttpSecurityMiddleware(app);
   const corsOrigins = resolveCorsOrigins(
     configService.get<string>('CORS_ORIGIN'),

@@ -19,6 +19,9 @@ export class Appointment {
   @Prop({ required: true, trim: true })
   type!: string;
 
+  @Prop({ trim: true, index: true })
+  vetClinicId?: string;
+
   @Prop({ trim: true })
   clinicName?: string;
 

@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserRole } from './enums/user-role.enum';
@@ -202,6 +206,154 @@ describe('UsersService', () => {
       await expect(service.findById('invalid-id')).rejects.toBeInstanceOf(
         BadRequestException,
       );
+    });
+  });
+
+  describe('updateOwnerProfileForVetIntegration', () => {
+    const userId = '507f1f77bcf86cd799439011';
+
+    function mockMutableUser(overrides: Record<string, unknown> = {}) {
+      const user = {
+        _id: { toString: () => userId },
+        email: 'jane@example.com',
+        firstName: 'Jane',
+        lastName: 'Doe',
+        role: UserRole.USER,
+        createdAt: new Date('2024-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2024-01-02T00:00:00.000Z'),
+        save: jest.fn().mockResolvedValue(undefined),
+        ...overrides,
+      };
+      const exec = jest.fn().mockResolvedValue(user);
+      userModelMock.findById.mockReturnValue({
+        exec,
+        select: jest.fn().mockReturnValue({ exec }),
+      });
+      return user;
+    }
+
+    it('updates first name, last name, and normalized email', async () => {
+      const user = mockMutableUser();
+      userModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      });
+
+      const result = await service.updateOwnerProfileForVetIntegration(userId, {
+        firstName: 'Janet',
+        lastName: 'Ownerson',
+        email: '  JANET@Example.COM ',
+      });
+
+      expect(user.firstName).toBe('Janet');
+      expect(user.lastName).toBe('Ownerson');
+      expect(user.email).toBe('janet@example.com');
+      expect(user.save).toHaveBeenCalled();
+      expect(result.email).toBe('janet@example.com');
+    });
+
+    it('allows keeping the same email while renaming a placeholder owner', async () => {
+      const user = mockMutableUser();
+
+      await service.updateOwnerProfileForVetIntegration(userId, {
+        firstName: 'Janet',
+        lastName: 'Doe',
+        email: 'jane@example.com',
+      });
+
+      expect(userModelMock.findOne).not.toHaveBeenCalled();
+      expect(user.firstName).toBe('Janet');
+      expect(user.save).toHaveBeenCalled();
+    });
+
+    it('treats an unchanged payload as a no-op', async () => {
+      const user = mockMutableUser({ passwordHash: 'hash' });
+
+      const result = await service.updateOwnerProfileForVetIntegration(userId, {
+        firstName: ' Jane ',
+        lastName: 'Doe',
+        email: 'JANE@example.com',
+      });
+
+      expect(user.save).not.toHaveBeenCalled();
+      expect(result.email).toBe('jane@example.com');
+    });
+
+    it('refuses to change the email of a claimed owner account', async () => {
+      const user = mockMutableUser({ passwordHash: 'hash' });
+
+      await expect(
+        service.updateOwnerProfileForVetIntegration(userId, {
+          firstName: 'Jane',
+          lastName: 'Doe',
+          email: 'attacker@example.com',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(user.email).toBe('jane@example.com');
+      expect(user.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses to rename a claimed owner account', async () => {
+      const user = mockMutableUser({ passwordHash: 'hash' });
+
+      await expect(
+        service.updateOwnerProfileForVetIntegration(userId, {
+          firstName: 'Someone',
+          lastName: 'Else',
+          email: 'jane@example.com',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(user.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses to edit non-owner accounts', async () => {
+      const user = mockMutableUser({ role: UserRole.VET });
+
+      await expect(
+        service.updateOwnerProfileForVetIntegration(userId, {
+          firstName: 'Jane',
+          lastName: 'Doe',
+          email: 'new@example.com',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(user.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid email', async () => {
+      mockMutableUser();
+
+      await expect(
+        service.updateOwnerProfileForVetIntegration(userId, {
+          firstName: 'Jane',
+          lastName: 'Doe',
+          email: 'not-an-email',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects email already used by another account', async () => {
+      const user = mockMutableUser();
+      userModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          _id: { toString: () => 'other-user-id' },
+          email: 'taken@example.com',
+        }),
+      });
+
+      await expect(
+        service.updateOwnerProfileForVetIntegration(userId, {
+          firstName: 'Janet',
+          lastName: 'Ownerson',
+          email: 'taken@example.com',
+        }),
+      ).rejects.toThrow(UsersService.OWNER_EMAIL_IN_USE_MESSAGE);
+
+      expect(user.firstName).toBe('Jane');
+      expect(user.lastName).toBe('Doe');
+      expect(user.email).toBe('jane@example.com');
+      expect(user.save).not.toHaveBeenCalled();
     });
   });
 });

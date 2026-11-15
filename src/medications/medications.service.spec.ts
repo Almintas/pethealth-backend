@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
+import { Pet } from '../pets/schemas/pet.schema';
 import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateMedicationInput } from './dto/create-medication.input';
 import { UpdateMedicationInput } from './dto/update-medication.input';
@@ -29,6 +30,11 @@ describe('MedicationsService', () => {
     create: jest.fn(),
     find: jest.fn(),
     findById: jest.fn(),
+    countDocuments: jest.fn(),
+  };
+
+  const petModelMock = {
+    findOne: jest.fn(),
   };
 
   const buildMedicationDocument = (pet: string, isActive = true) => ({
@@ -61,8 +67,16 @@ describe('MedicationsService', () => {
           provide: PetOwnershipService,
           useValue: petOwnershipServiceMock,
         },
+        {
+          provide: getModelToken(Pet.name),
+          useValue: petModelMock,
+        },
       ],
     }).compile();
+
+    petModelMock.findOne.mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ _id: new Types.ObjectId(petId) }),
+    });
 
     service = module.get<MedicationsService>(MedicationsService);
   });
@@ -285,6 +299,86 @@ describe('MedicationsService', () => {
     it('rejects empty updates', async () => {
       await expect(
         service.updateMedication(ownerId, medicationId, {}),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('findMedicationsPageForService', () => {
+    it('returns a paginated page sorted with active medications first', async () => {
+      const document = buildMedicationDocument(petId);
+      medicationModelMock.countDocuments
+        .mockReturnValueOnce({ exec: jest.fn().mockResolvedValue(1) })
+        .mockReturnValueOnce({ exec: jest.fn().mockResolvedValue(1) });
+      medicationModelMock.find.mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          skip: jest.fn().mockReturnValue({
+            limit: jest.fn().mockReturnValue({
+              exec: jest.fn().mockResolvedValue([document]),
+            }),
+          }),
+        }),
+      });
+
+      const page = await service.findMedicationsPageForService(petId, {
+        page: 1,
+        limit: 5,
+      });
+
+      expect(page.items).toHaveLength(1);
+      expect(page.activeTotal).toBe(1);
+      expect(page.totalPages).toBe(1);
+    });
+
+    it('rejects pagination for an inactive pet', async () => {
+      petModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      });
+
+      await expect(
+        service.findMedicationsPageForService(petId, { page: 1, limit: 5 }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('createMedicationForService', () => {
+    it('creates a medication for an active pet', async () => {
+      const document = buildMedicationDocument(petId);
+      medicationModelMock.create.mockResolvedValue(document);
+
+      const result = await service.createMedicationForService(petId, {
+        name: 'Apoquel',
+        dosage: 16,
+        dosageUnit: 'mg',
+        frequency: 'daily',
+        startDate,
+      });
+
+      expect(result.id).toBe(medicationId);
+      expect(medicationModelMock.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('updateMedicationForService', () => {
+    it('stops a medication by setting isActive to false', async () => {
+      const document = buildMedicationDocument(petId);
+      medicationModelMock.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(document),
+      });
+
+      const result = await service.updateMedicationForService(medicationId, {
+        isActive: false,
+      });
+
+      expect(document.isActive).toBe(false);
+      expect(document.save).toHaveBeenCalled();
+      expect(result.isActive).toBe(false);
+    });
+
+    it('rejects changing petId', async () => {
+      await expect(
+        service.updateMedicationForService(medicationId, {
+          petId,
+        } as UpdateMedicationInput & { petId: string }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });

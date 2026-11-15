@@ -1,17 +1,21 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
-import { validate } from 'class-validator';
+import { isEmail, validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UserRole } from './enums/user-role.enum';
 import { CreateUserOptions } from './interfaces/create-user-options.interface';
-import { UserWithPasswordHash } from './interfaces/user-with-password-hash.interface';
+import {
+  UserAuthState,
+  UserWithPasswordHash,
+} from './interfaces/user-with-password-hash.interface';
 import { NotificationPreferencesModel } from './models/notification-preferences.model';
 import { UserModel } from './models/user.model';
 import { resolveNotificationPreferences } from './notification-preferences.util';
@@ -79,7 +83,7 @@ export class UsersService {
 
     const user = await this.userModel
       .findOne({ email: normalizedEmail })
-      .select('+passwordHash')
+      .select('+passwordHash +tokenVersion')
       .exec();
 
     if (!user?.passwordHash) {
@@ -89,6 +93,7 @@ export class UsersService {
     return {
       user: this.toUserModel(user),
       passwordHash: user.passwordHash,
+      tokenVersion: user.tokenVersion ?? 0,
     };
   }
 
@@ -110,7 +115,7 @@ export class UsersService {
 
     const user = await this.userModel
       .findById(id)
-      .select('+passwordHash')
+      .select('+passwordHash +tokenVersion')
       .exec();
 
     if (!user?.passwordHash) {
@@ -120,7 +125,200 @@ export class UsersService {
     return {
       user: this.toUserModel(user),
       passwordHash: user.passwordHash,
+      tokenVersion: user.tokenVersion ?? 0,
     };
+  }
+
+  /** Loads the user plus the token version used to validate JWTs. */
+  async findAuthStateById(id: string): Promise<UserAuthState | null> {
+    if (!isValidObjectId(id)) {
+      return null;
+    }
+
+    const user = await this.userModel
+      .findById(id)
+      .select('+tokenVersion')
+      .exec();
+    if (!user) {
+      return null;
+    }
+
+    return {
+      user: this.toUserModel(user),
+      tokenVersion: user.tokenVersion ?? 0,
+    };
+  }
+
+  /** Returns the account (if any) and whether it already has a password set. */
+  async findByEmailWithAccountStatus(
+    email: string,
+  ): Promise<{ user: UserModel; hasPassword: boolean } | null> {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      return null;
+    }
+
+    const user = await this.userModel
+      .findOne({ email: normalizedEmail })
+      .select('+passwordHash')
+      .exec();
+    if (!user) {
+      return null;
+    }
+
+    return { user: this.toUserModel(user), hasPassword: !!user.passwordHash };
+  }
+
+  async setPasswordResetToken(
+    userId: string,
+    tokenHash: string,
+    expiresAt: Date,
+  ): Promise<void> {
+    await this.userModel
+      .updateOne(
+        { _id: userId },
+        {
+          $set: {
+            passwordResetTokenHash: tokenHash,
+            passwordResetExpiresAt: expiresAt,
+          },
+        },
+      )
+      .exec();
+  }
+
+  /**
+   * Atomically consumes a valid, unexpired reset token and sets the new password.
+   * Returns false when the token is unknown, expired, or already used.
+   */
+  async resetPasswordWithToken(
+    tokenHash: string,
+    passwordHash: string,
+  ): Promise<boolean> {
+    const updated = await this.userModel
+      .findOneAndUpdate(
+        {
+          passwordResetTokenHash: tokenHash,
+          passwordResetExpiresAt: { $gt: new Date() },
+        },
+        {
+          $set: { passwordHash },
+          $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+          $inc: { tokenVersion: 1 },
+        },
+      )
+      .exec();
+
+    return updated !== null;
+  }
+
+  static readonly OWNER_EMAIL_IN_USE_MESSAGE =
+    'Email is already associated with another account.';
+
+  static readonly OWNER_PROFILE_MANAGED_BY_OWNER_MESSAGE =
+    'This owner manages their own account. Ask the owner to update their profile in the PetHealth app.';
+
+  /**
+   * Looks up an account by email for Vet integration and reports whether it has
+   * been claimed (the owner has set a password and can sign in themselves).
+   */
+  async findAccountStateByEmail(
+    email: string,
+  ): Promise<{ user: UserModel; isClaimed: boolean } | null> {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      throw new BadRequestException('Email is required');
+    }
+
+    const user = await this.userModel
+      .findOne({ email: normalizedEmail })
+      .select('+passwordHash')
+      .exec();
+    if (!user) {
+      return null;
+    }
+
+    return {
+      user: this.toUserModel(user),
+      isClaimed: Boolean(user.passwordHash),
+    };
+  }
+
+  /**
+   * Updates canonical Owner identity for Vet integration.
+   *
+   * Security: a clinic may only edit placeholder owner accounts it created
+   * (no password set, role USER). Claimed accounts belong to the owner — a
+   * clinic must never change their name or sign-in email, otherwise any
+   * clinic user could take over an owner's account. An unchanged payload is
+   * accepted as a no-op so clinics can still save other patient fields.
+   */
+  async updateOwnerProfileForVetIntegration(
+    userId: string,
+    input: { firstName: string; lastName: string; email: string },
+  ): Promise<UserModel> {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const normalizedEmail = input.email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      throw new BadRequestException('Email is required');
+    }
+    if (!isEmail(normalizedEmail)) {
+      throw new BadRequestException('Invalid email address');
+    }
+
+    const user = await this.userModel
+      .findById(userId)
+      .select('+passwordHash')
+      .exec();
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    const firstName = input.firstName.trim();
+    const lastName = input.lastName.trim();
+    const isUnchanged =
+      firstName === user.firstName &&
+      lastName === user.lastName &&
+      normalizedEmail === user.email;
+
+    if (isUnchanged) {
+      return this.toUserModel(user);
+    }
+
+    if (user.role !== UserRole.USER || user.passwordHash) {
+      throw new ForbiddenException(
+        UsersService.OWNER_PROFILE_MANAGED_BY_OWNER_MESSAGE,
+      );
+    }
+
+    if (normalizedEmail !== user.email) {
+      const existing = await this.userModel
+        .findOne({ email: normalizedEmail })
+        .exec();
+      if (existing && existing._id.toString() !== userId) {
+        throw new ConflictException(UsersService.OWNER_EMAIL_IN_USE_MESSAGE);
+      }
+    }
+
+    user.firstName = firstName;
+    user.lastName = lastName;
+    if (normalizedEmail !== user.email) {
+      user.email = normalizedEmail;
+    }
+
+    try {
+      await user.save();
+      return this.toUserModel(user);
+    } catch (error: unknown) {
+      if (this.isDuplicateKeyError(error)) {
+        throw new ConflictException(UsersService.OWNER_EMAIL_IN_USE_MESSAGE);
+      }
+
+      throw new InternalServerErrorException('Failed to update profile');
+    }
   }
 
   async updateProfile(
@@ -216,12 +414,45 @@ export class UsersService {
     }
 
     const result = await this.userModel
-      .updateOne({ _id: userId }, { passwordHash })
+      .updateOne(
+        { _id: userId },
+        {
+          $set: { passwordHash },
+          $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+          $inc: { tokenVersion: 1 },
+        },
+      )
       .exec();
 
     if (result.matchedCount === 0) {
       throw new BadRequestException('User not found');
     }
+  }
+
+  /**
+   * Sets the first password on a placeholder owner account. Atomic: returns
+   * false when the account already has a password (or is not an owner).
+   */
+  async setPasswordHashIfUnclaimed(
+    userId: string,
+    passwordHash: string,
+  ): Promise<boolean> {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const result = await this.userModel
+      .updateOne(
+        {
+          _id: userId,
+          role: UserRole.USER,
+          passwordHash: { $in: [null, ''] },
+        },
+        { $set: { passwordHash } },
+      )
+      .exec();
+
+    return result.modifiedCount > 0;
   }
 
   private async validateCreateUserInput(

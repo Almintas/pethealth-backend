@@ -22,13 +22,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<UserModel> {
-    const user = await this.usersService.findById(payload.sub);
+    const authState = await this.usersService.findAuthStateById(payload.sub);
 
-    if (!user) {
+    if (!authState) {
       this.logger.warn('JWT authentication failed (user no longer exists)');
       throw new UnauthorizedException();
     }
 
-    return user;
+    if ((payload.tv ?? 0) !== authState.tokenVersion) {
+      this.logger.warn('JWT authentication failed (token revoked)');
+      throw new UnauthorizedException();
+    }
+
+    return authState.user;
   }
 }

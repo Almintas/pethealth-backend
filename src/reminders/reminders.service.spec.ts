@@ -2,6 +2,9 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
+import { Appointment } from '../appointments/schemas/appointment.schema';
+import { Medication } from '../medications/schemas/medication.schema';
+import { Vaccination } from '../vaccinations/schemas/vaccination.schema';
 import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateReminderInput } from './dto/create-reminder.input';
 import { UpdateReminderInput } from './dto/update-reminder.input';
@@ -34,6 +37,13 @@ describe('RemindersService', () => {
     findById: jest.fn(),
   };
 
+  const existsResult = (value: unknown) => ({
+    exec: jest.fn().mockResolvedValue(value),
+  });
+  const vaccinationModelMock = { exists: jest.fn() };
+  const medicationModelMock = { exists: jest.fn() };
+  const appointmentModelMock = { exists: jest.fn() };
+
   const buildReminderDocument = (
     pet: string,
     status: ReminderStatus = ReminderStatus.PENDING,
@@ -64,6 +74,18 @@ describe('RemindersService', () => {
         {
           provide: PetOwnershipService,
           useValue: petOwnershipServiceMock,
+        },
+        {
+          provide: getModelToken(Vaccination.name),
+          useValue: vaccinationModelMock,
+        },
+        {
+          provide: getModelToken(Medication.name),
+          useValue: medicationModelMock,
+        },
+        {
+          provide: getModelToken(Appointment.name),
+          useValue: appointmentModelMock,
         },
       ],
     }).compile();
@@ -117,6 +139,9 @@ describe('RemindersService', () => {
         undefined,
       );
       reminderModelMock.create.mockResolvedValue(document);
+      vaccinationModelMock.exists.mockReturnValue(
+        existsResult({ _id: new Types.ObjectId(sourceId) }),
+      );
 
       await service.createReminder(ownerId, {
         petId,
@@ -127,12 +152,36 @@ describe('RemindersService', () => {
         sourceId,
       });
 
+      expect(vaccinationModelMock.exists).toHaveBeenCalledWith({
+        _id: new Types.ObjectId(sourceId),
+        petId: new Types.ObjectId(petId),
+      });
+
       expect(reminderModelMock.create).toHaveBeenCalledWith(
         expect.objectContaining({
           sourceType: SourceType.VACCINATION,
           sourceId: new Types.ObjectId(sourceId),
         }),
       );
+    });
+
+    it('rejects source records that belong to another pet', async () => {
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue(
+        undefined,
+      );
+      medicationModelMock.exists.mockReturnValue(existsResult(null));
+
+      await expect(
+        service.createReminder(ownerId, {
+          petId,
+          type: ReminderType.MEDICATION,
+          title: 'Pill',
+          dueAt,
+          sourceType: SourceType.MEDICATION,
+          sourceId,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(reminderModelMock.create).not.toHaveBeenCalled();
     });
 
     it('rejects mismatched sourceType and sourceId', async () => {

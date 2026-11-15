@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { UserRole } from '../users/enums/user-role.enum';
+import { AccountActivationService } from './account-activation/account-activation.service';
 import { UserModel } from '../users/models/user.model';
 import { UsersService } from '../users/users.service';
 import { ChangePasswordInput } from './dto/change-password.input';
@@ -18,6 +19,12 @@ import { UpdateNotificationPreferencesInput } from './dto/update-notification-pr
 import { UpdateProfileInput } from './dto/update-profile.input';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { AuthPayload } from './models/auth-payload.model';
+import { RequestPasswordResetInput } from './dto/request-password-reset.input';
+import { ResetPasswordInput } from './dto/reset-password.input';
+import {
+  hashPasswordResetToken,
+  PasswordResetService,
+} from './password-reset.service';
 import { PasswordService } from './password.service';
 
 @Injectable()
@@ -28,13 +35,29 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly passwordService: PasswordService,
     private readonly jwtService: JwtService,
+    private readonly accountActivationService: AccountActivationService,
+    private readonly passwordResetService: PasswordResetService,
   ) {}
+
+  static readonly ACCOUNT_ACTIVATION_REQUIRED_MESSAGE =
+    'Your veterinary clinic has already created an account for this email. We sent you an email with a link to activate it.';
 
   async register(input: RegisterInput): Promise<UserModel> {
     const dto = await this.validateRegisterInput(input);
 
     const existingUser = await this.usersService.findByEmail(dto.email);
     if (existingUser) {
+      // Clinic-created placeholder: prove email ownership via an emailed link
+      // instead of letting whoever registers first take over the records.
+      const isPlaceholder =
+        await this.accountActivationService.sendActivationEmailIfUnclaimed(
+          existingUser.email,
+        );
+      if (isPlaceholder) {
+        throw new ConflictException(
+          AuthService.ACCOUNT_ACTIVATION_REQUIRED_MESSAGE,
+        );
+      }
       throw new ConflictException('A user with this email already exists');
     }
 
@@ -74,6 +97,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: authRecord.user.id,
       role: authRecord.user.role,
+      tv: authRecord.tokenVersion,
     };
 
     return {
@@ -138,6 +162,31 @@ export class AuthService {
     return true;
   }
 
+  async requestPasswordReset(
+    input: RequestPasswordResetInput,
+  ): Promise<boolean> {
+    const dto = await this.validateInput(RequestPasswordResetInput, input);
+    await this.passwordResetService.requestPasswordReset(dto.email);
+    return true;
+  }
+
+  async resetPassword(input: ResetPasswordInput): Promise<boolean> {
+    const dto = await this.validateInput(ResetPasswordInput, input);
+    const passwordHash = await this.passwordService.hash(dto.newPassword);
+    const updated = await this.usersService.resetPasswordWithToken(
+      hashPasswordResetToken(dto.token),
+      passwordHash,
+    );
+
+    if (!updated) {
+      throw new BadRequestException(
+        'This link is invalid or has expired. Request a new one.',
+      );
+    }
+
+    return true;
+  }
+
   async updateNotificationPreferences(
     currentUser: UserModel,
     input: UpdateNotificationPreferencesInput,
@@ -157,6 +206,22 @@ export class AuthService {
       emailMedicationReminders: dto.emailMedicationReminders,
       emailVaccinationReminders: dto.emailVaccinationReminders,
     });
+  }
+
+  private async validateInput<T extends object>(
+    cls: new () => T,
+    input: T,
+  ): Promise<T> {
+    const dto = plainToInstance(cls, input, {
+      enableImplicitConversion: true,
+    });
+    const errors = await validate(dto);
+
+    if (errors.length > 0) {
+      throw new BadRequestException(errors);
+    }
+
+    return dto;
   }
 
   private async validateUpdateNotificationPreferencesInput(

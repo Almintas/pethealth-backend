@@ -240,6 +240,48 @@ describe('PetsService', () => {
       expect(ownedPet.deleteOne).not.toHaveBeenCalled();
     });
 
+    it('soft deletes before cleanup and survives cleanup failures', async () => {
+      const ownedPet = {
+        ...buildPetDocument(ownerId),
+        photoStorageKey: 'photo-key',
+        photoUrl: 'https://cdn/photo.webp',
+      };
+      petModelMock.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(ownedPet),
+      });
+      const order: string[] = [];
+      ownedPet.save.mockImplementation(() => {
+        order.push('save');
+        return Promise.resolve(undefined);
+      });
+      relatedModelMock.deleteMany.mockImplementationOnce(() => {
+        order.push('deleteMany');
+        return { exec: jest.fn().mockRejectedValue(new Error('db error')) };
+      });
+      petPhotoStorageMock.deletePetPhoto.mockImplementationOnce(() => {
+        order.push('photo');
+        return Promise.reject(new Error('cdn down'));
+      });
+
+      await expect(service.deletePet(ownerId, petId)).resolves.toBe(true);
+
+      expect(order[0]).toBe('save');
+      expect(order).toContain('photo');
+      expect(ownedPet.deletedAt).toBeInstanceOf(Date);
+      expect(ownedPet.photoStorageKey).toBeUndefined();
+      expect(petPhotoStorageMock.deletePetPhoto).toHaveBeenCalledWith(
+        'photo-key',
+      );
+    });
+
+    it('rejects null for required fields when updating', async () => {
+      await expect(
+        service.updatePet(ownerId, petId, {
+          name: null,
+        } as unknown as UpdatePetInput),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it('does not delete another user pet', async () => {
       petModelMock.findOne.mockReturnValue({
         exec: jest.fn().mockResolvedValue(null),

@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
@@ -7,6 +11,7 @@ import { CreateAppointmentInput } from './dto/create-appointment.input';
 import { UpdateAppointmentInput } from './dto/update-appointment.input';
 import { AppointmentStatus } from './enums/appointment-status.enum';
 import { AppointmentsService } from './appointments.service';
+import { Pet } from '../pets/schemas/pet.schema';
 import { Appointment } from './schemas/appointment.schema';
 
 describe('AppointmentsService', () => {
@@ -29,6 +34,10 @@ describe('AppointmentsService', () => {
     create: jest.fn(),
     find: jest.fn(),
     findById: jest.fn(),
+  };
+
+  const petModelMock = {
+    findOne: jest.fn(),
   };
 
   const buildAppointmentDocument = (
@@ -55,6 +64,10 @@ describe('AppointmentsService', () => {
         {
           provide: getModelToken(Appointment.name),
           useValue: appointmentModelMock,
+        },
+        {
+          provide: getModelToken(Pet.name),
+          useValue: petModelMock,
         },
         {
           provide: PetOwnershipService,
@@ -240,6 +253,89 @@ describe('AppointmentsService', () => {
     it('rejects empty updates', async () => {
       await expect(
         service.updateAppointment(ownerId, appointmentId, {}),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('findAppointmentsByPetIds', () => {
+    it('returns appointments scheduled inside the requested window', async () => {
+      const document = buildAppointmentDocument(petId);
+      document.scheduledAt = new Date('2026-09-26T15:00:00.000Z');
+      const exec = jest.fn().mockResolvedValue([document]);
+      appointmentModelMock.find.mockReturnValue({
+        sort: jest.fn().mockReturnValue({ exec }),
+      });
+
+      const scheduledFrom = new Date('2026-09-26T00:00:00.000Z');
+      const scheduledTo = new Date('2026-09-26T23:59:59.999Z');
+      const appointments = await service.findAppointmentsByPetIds([petId], {
+        scheduledFrom,
+        scheduledTo,
+      });
+
+      expect(appointments).toHaveLength(1);
+      expect(appointments[0]?.scheduledAt.toISOString()).toBe(
+        '2026-09-26T15:00:00.000Z',
+      );
+      expect(appointmentModelMock.find).toHaveBeenCalledWith({
+        petId: { $in: [new Types.ObjectId(petId)] },
+        scheduledAt: {
+          $gte: scheduledFrom,
+          $lte: scheduledTo,
+        },
+      });
+    });
+  });
+
+  describe('clinic-managed appointments', () => {
+    const mockClinicAppointment = () => {
+      const document = {
+        ...buildAppointmentDocument(petId),
+        vetClinicId: 'clinic-1',
+      };
+      appointmentModelMock.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(document),
+      });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue({
+        id: petId,
+      });
+      return document;
+    };
+
+    it('prevents owners from updating appointments created by a clinic', async () => {
+      const document = mockClinicAppointment();
+
+      await expect(
+        service.updateAppointment(ownerId, appointmentId, { notes: 'x' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(document.save).not.toHaveBeenCalled();
+    });
+
+    it('prevents owners from deleting appointments created by a clinic', async () => {
+      const document = mockClinicAppointment();
+
+      await expect(
+        service.deleteAppointment(ownerId, appointmentId),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(document.deleteOne).not.toHaveBeenCalled();
+    });
+
+    it('still lets the clinic update its appointments via the service path', async () => {
+      const document = mockClinicAppointment();
+
+      await service.updateAppointmentForService(appointmentId, {
+        notes: 'Bring records',
+      });
+      expect(document.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('null updates', () => {
+    it('rejects null for required fields with a validation error', async () => {
+      await expect(
+        service.updateAppointment(ownerId, appointmentId, {
+          type: null,
+        } as unknown as UpdateAppointmentInput),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });

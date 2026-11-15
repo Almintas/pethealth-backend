@@ -97,6 +97,16 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   ENABLE_DEV_EMAIL_TEST?: string;
+
+  /** Shared secret for authenticated Vet backend service-to-service requests. */
+  @IsString()
+  @IsOptional()
+  OWNER_SERVICE_SECRET?: string;
+
+  /** Vet backend GraphQL URL for owner-controlled clinic access (backend only). */
+  @IsString()
+  @IsOptional()
+  VET_GRAPHQL_URL?: string;
 }
 
 function assertJwtSecretPolicy(nodeEnv: Environment, jwtSecret: string): void {
@@ -175,6 +185,26 @@ export function validate(
   }
 
   assertJwtSecretPolicy(validatedConfig.NODE_ENV, validatedConfig.JWT_SECRET);
+  assertOwnerServiceSecretPolicy(
+    validatedConfig.NODE_ENV,
+    validatedConfig.OWNER_SERVICE_SECRET,
+  );
 
   return validatedConfig;
+}
+
+function assertOwnerServiceSecretPolicy(
+  nodeEnv: Environment,
+  ownerServiceSecret?: string,
+): void {
+  if (nodeEnv !== Environment.Production) {
+    return;
+  }
+
+  const trimmed = ownerServiceSecret?.trim();
+  if (!trimmed || trimmed.length < 32) {
+    throw new Error(
+      'OWNER_SERVICE_SECRET must be at least 32 characters when NODE_ENV is production',
+    );
+  }
 }

@@ -38,6 +38,17 @@ export class User {
   @Prop({ select: false })
   passwordHash?: string;
 
+  /** Incremented whenever the password changes; JWTs carrying an older value are rejected. */
+  @Prop({ default: 0, select: false })
+  tokenVersion?: number;
+
+  /** SHA-256 of the single-use password reset / account setup token. */
+  @Prop({ select: false, index: true, sparse: true })
+  passwordResetTokenHash?: string;
+
+  @Prop({ select: false })
+  passwordResetExpiresAt?: Date;
+
   @Prop({
     type: NotificationPreferencesSchema,
     default: () => ({}),

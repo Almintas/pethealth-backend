@@ -88,11 +88,40 @@ export class NotificationDeliveryService {
       });
       return 'send';
     } catch (error: unknown) {
-      if (this.isDuplicateKeyError(error)) {
-        return 'skip';
+      if (!this.isDuplicateKeyError(error)) {
+        throw error;
       }
-      throw error;
     }
+
+    // Retry path: atomically claim a FAILED record whose backoff elapsed, or a
+    // PENDING record abandoned long ago (e.g. crash mid-send). A single
+    // conditional update means concurrent schedulers cannot both win.
+    const now = Date.now();
+    const claimed = await this.deliveryModel
+      .findOneAndUpdate(
+        {
+          deliveryKey: params.deliveryKey,
+          attemptCount: { $lt: MAX_ATTEMPTS },
+          $or: [
+            {
+              status: NotificationDeliveryStatus.FAILED,
+              updatedAt: { $lte: new Date(now - RETRY_MIN_INTERVAL_MS) },
+            },
+            {
+              status: NotificationDeliveryStatus.PENDING,
+              updatedAt: { $lte: new Date(now - STALE_PENDING_MS) },
+            },
+          ],
+        },
+        {
+          $set: { status: NotificationDeliveryStatus.PENDING },
+          $inc: { attemptCount: 1 },
+        },
+        { new: true },
+      )
+      .exec();
+
+    return claimed ? 'send' : 'skip';
   }
 
   private isRetryable(existing: NotificationDeliveryDocument): boolean {

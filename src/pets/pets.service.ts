@@ -99,6 +99,15 @@ export class PetsService {
     return this.toPetModel(pet);
   }
 
+  async updateActivePetForService(
+    petId: string,
+    input: UpdatePetInput,
+  ): Promise<PetModel> {
+    const dto = await this.validateUpdatePetInput(input);
+    const pet = await this.findActivePetDocumentById(petId);
+    return this.applyPetUpdate(pet, dto);
+  }
+
   async updatePet(
     ownerId: string,
     petId: string,
@@ -106,7 +115,13 @@ export class PetsService {
   ): Promise<PetModel> {
     const dto = await this.validateUpdatePetInput(input);
     const pet = await this.findOwnedPetDocument(ownerId, petId);
+    return this.applyPetUpdate(pet, dto);
+  }
 
+  private async applyPetUpdate(
+    pet: PetDocument,
+    dto: UpdatePetInput,
+  ): Promise<PetModel> {
     if (dto.name !== undefined) {
       pet.name = dto.name;
     }
@@ -195,11 +210,9 @@ export class PetsService {
     const pet = await this.findOwnedPetDocument(ownerId, petId);
     const photoStorageKey = pet.photoStorageKey;
 
-    /*
-     * Soft-delete the pet first so it disappears for the owner even if a
-     * later cleanup step fails. Related records are only reachable through an
-     * active pet, so leftovers from a failed cleanup are never exposed.
-     */
+    // Soft-delete first: once this succeeds the pet and everything attached to
+    // it is hidden everywhere (all reads filter on active pets), so a failure
+    // in the cleanup below can never leave a half-deleted pet visible.
     try {
       pet.deletedAt = new Date();
       pet.photoUrl = undefined;
@@ -213,15 +226,25 @@ export class PetsService {
       await this.deletePetRelatedRecords(pet._id);
     } catch (error: unknown) {
       this.logger.error(
-        `Failed to delete related records for pet ${pet._id.toString()}`,
-        error instanceof Error ? error.stack : undefined,
+        `Pet ${pet._id.toString()} deleted but related record cleanup failed: ${this.errorMessage(error)}`,
       );
     }
 
     if (photoStorageKey) {
-      await this.petPhotoStorage.deletePetPhoto(photoStorageKey);
+      try {
+        await this.petPhotoStorage.deletePetPhoto(photoStorageKey);
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Pet ${pet._id.toString()} deleted but photo cleanup failed: ${this.errorMessage(error)}`,
+        );
+      }
     }
+
     return true;
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private async deletePetRelatedRecords(
@@ -234,6 +257,25 @@ export class PetsService {
       this.appointmentModel.deleteMany({ petId: petObjectId }).exec(),
       this.reminderModel.deleteMany({ petId: petObjectId }).exec(),
     ]);
+  }
+
+  private async findActivePetDocumentById(petId: string): Promise<PetDocument> {
+    if (!isValidObjectId(petId)) {
+      throw new NotFoundException('Pet not found');
+    }
+
+    const pet = await this.petModel
+      .findOne({
+        _id: new Types.ObjectId(petId),
+        ...ACTIVE_PET_FILTER,
+      })
+      .exec();
+
+    if (!pet) {
+      throw new NotFoundException('Pet not found');
+    }
+
+    return pet;
   }
 
   private async findOwnedPetDocument(

@@ -5,6 +5,7 @@ import { Types } from 'mongoose';
 import { PetOwnershipService } from '../pets/pet-ownership.service';
 import { CreateMedicalRecordInput } from './dto/create-medical-record.input';
 import { UpdateMedicalRecordInput } from './dto/update-medical-record.input';
+import { Pet } from '../pets/schemas/pet.schema';
 import { MedicalRecordsService } from './medical-records.service';
 import { MedicalRecord } from './schemas/medical-record.schema';
 
@@ -28,6 +29,12 @@ describe('MedicalRecordsService', () => {
     create: jest.fn(),
     find: jest.fn(),
     findById: jest.fn(),
+    countDocuments: jest.fn(),
+  };
+
+  const petModelMock = {
+    countDocuments: jest.fn(),
+    findOne: jest.fn(),
   };
 
   const buildRecordDocument = (pet: string) => ({
@@ -57,8 +64,16 @@ describe('MedicalRecordsService', () => {
           provide: PetOwnershipService,
           useValue: petOwnershipServiceMock,
         },
+        {
+          provide: getModelToken(Pet.name),
+          useValue: petModelMock,
+        },
       ],
     }).compile();
+
+    petModelMock.countDocuments.mockReturnValue({
+      exec: jest.fn().mockResolvedValue(1),
+    });
 
     service = module.get<MedicalRecordsService>(MedicalRecordsService);
   });
@@ -241,6 +256,98 @@ describe('MedicalRecordsService', () => {
       await expect(
         service.updateMedicalRecord(ownerId, recordId, {}),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('createMedicalRecordForService', () => {
+    it('creates a record for an active pet without owner auth', async () => {
+      const document = buildRecordDocument(petId);
+      medicalRecordModelMock.create.mockResolvedValue(document);
+
+      const result = await service.createMedicalRecordForService(petId, {
+        date: recordDate,
+        type: 'checkup',
+        title: 'Annual checkup',
+      });
+
+      expect(
+        petOwnershipServiceMock.assertPetBelongsToOwner,
+      ).not.toHaveBeenCalled();
+      expect(result.title).toBe('Annual checkup');
+    });
+  });
+
+  describe('findMedicalRecordsForPetForService', () => {
+    it('lists records sorted by date for an active pet', async () => {
+      const document = buildRecordDocument(petId);
+      medicalRecordModelMock.find.mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([document]),
+        }),
+      });
+
+      const records = await service.findMedicalRecordsForPetForService(petId);
+
+      expect(records).toHaveLength(1);
+      expect(records[0]?.petId).toBe(petId);
+    });
+  });
+
+  describe('findMedicalRecordsPageForService', () => {
+    it('returns paginated records sorted newest first', async () => {
+      const newer = buildRecordDocument(petId);
+      const older = {
+        ...buildRecordDocument(petId),
+        _id: new Types.ObjectId(),
+        date: new Date('2024-01-01T00:00:00.000Z'),
+      };
+      medicalRecordModelMock.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(52),
+      });
+      medicalRecordModelMock.find.mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          skip: jest.fn().mockReturnValue({
+            limit: jest.fn().mockReturnValue({
+              exec: jest.fn().mockResolvedValue([newer, older]),
+            }),
+          }),
+        }),
+      });
+
+      const page = await service.findMedicalRecordsPageForService(petId, {
+        page: 1,
+        limit: 5,
+      });
+
+      expect(page.total).toBe(52);
+      expect(page.limit).toBe(5);
+      expect(page.items).toHaveLength(2);
+      expect(medicalRecordModelMock.find).toHaveBeenCalled();
+    });
+
+    it('applies search and type filters', async () => {
+      medicalRecordModelMock.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
+      medicalRecordModelMock.find.mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          skip: jest.fn().mockReturnValue({
+            limit: jest.fn().mockReturnValue({
+              exec: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      });
+
+      await service.findMedicalRecordsPageForService(petId, {
+        page: 1,
+        limit: 20,
+        search: 'head',
+        type: 'FOLLOW_UP',
+      });
+
+      expect(medicalRecordModelMock.find).toHaveBeenCalled();
+      expect(medicalRecordModelMock.countDocuments).toHaveBeenCalled();
     });
   });
 

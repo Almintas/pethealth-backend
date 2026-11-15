@@ -1,0 +1,174 @@
+import { NotFoundException } from '@nestjs/common';
+import { getModelToken } from '@nestjs/mongoose';
+import { Test, TestingModule } from '@nestjs/testing';
+import { createHash } from 'node:crypto';
+import { Types } from 'mongoose';
+import { InternalPetsService } from '../internal-services/internal-pets.service';
+import { PetOwnershipService } from '../pets/pet-ownership.service';
+import { ClinicAccessService } from './clinic-access.service';
+import { PetShareCode } from './schemas/pet-share-code.schema';
+import { VetBackendClient } from './vet-backend.client';
+
+describe('ClinicAccessService', () => {
+  let service: ClinicAccessService;
+
+  const ownerId = new Types.ObjectId().toString();
+  const petId = new Types.ObjectId().toString();
+  const vetClinicId = new Types.ObjectId().toString();
+
+  const shareCodeModel = {
+    deleteMany: jest.fn(),
+    create: jest.fn(),
+    findOneAndUpdate: jest.fn(),
+  };
+  const petOwnershipService = { assertPetBelongsToOwner: jest.fn() };
+  const internalPetsService = { findActivePetsByIds: jest.fn() };
+  const vetBackendClient = {
+    listClinicAccessForPet: jest.fn(),
+    revokeClinicAccess: jest.fn(),
+  };
+
+  const sha256 = (value: string) =>
+    createHash('sha256').update(value).digest('hex');
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    shareCodeModel.deleteMany.mockReturnValue({
+      exec: jest.fn().mockResolvedValue({}),
+    });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ClinicAccessService,
+        { provide: getModelToken(PetShareCode.name), useValue: shareCodeModel },
+        { provide: PetOwnershipService, useValue: petOwnershipService },
+        { provide: InternalPetsService, useValue: internalPetsService },
+        { provide: VetBackendClient, useValue: vetBackendClient },
+      ],
+    }).compile();
+
+    service = module.get(ClinicAccessService);
+  });
+
+  it('creates a formatted single-use code and stores only its hash', async () => {
+    let storedDoc: Record<string, unknown> = {};
+    shareCodeModel.create.mockImplementation((doc: Record<string, unknown>) => {
+      storedDoc = doc;
+      return Promise.resolve(doc);
+    });
+
+    const result = await service.createShareCode(ownerId, petId);
+
+    expect(petOwnershipService.assertPetBelongsToOwner).toHaveBeenCalledWith(
+      ownerId,
+      petId,
+    );
+    expect(result.code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    expect(result.code).not.toMatch(/[01OIL]/);
+    const rawCode = result.code.replace('-', '');
+    expect(storedDoc.codeHash).toBe(sha256(rawCode));
+    expect(JSON.stringify(storedDoc)).not.toContain(rawCode);
+    expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('refuses to create a code for a pet the user does not own', async () => {
+    petOwnershipService.assertPetBelongsToOwner.mockRejectedValueOnce(
+      new NotFoundException('Pet not found'),
+    );
+
+    await expect(
+      service.createShareCode(ownerId, petId),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(shareCodeModel.create).not.toHaveBeenCalled();
+  });
+
+  it('redeems a valid code (case and dash insensitive) and returns the pet', async () => {
+    let filter: Record<string, unknown> = {};
+    let update: { $set?: Record<string, unknown> } = {};
+    shareCodeModel.findOneAndUpdate.mockImplementation(
+      (
+        nextFilter: Record<string, unknown>,
+        nextUpdate: { $set?: Record<string, unknown> },
+      ) => {
+        filter = nextFilter;
+        update = nextUpdate;
+        return {
+          exec: () =>
+            Promise.resolve({
+              petId: new Types.ObjectId(petId),
+              ownerId: new Types.ObjectId(ownerId),
+            }),
+        };
+      },
+    );
+    const pet = { id: petId, owner: { id: ownerId } };
+    internalPetsService.findActivePetsByIds.mockResolvedValue([pet]);
+
+    const result = await service.redeemShareCode('abcd-2345', vetClinicId);
+
+    expect(result).toBe(pet);
+    expect(filter.codeHash).toBe(sha256('ABCD2345'));
+    expect(filter.usedAt).toBeNull();
+    expect(update.$set?.usedByVetClinicId).toBe(vetClinicId);
+  });
+
+  it('rejects unknown, used or expired codes', async () => {
+    shareCodeModel.findOneAndUpdate.mockReturnValue({
+      exec: jest.fn().mockResolvedValue(null),
+    });
+
+    await expect(
+      service.redeemShareCode('ABCD-2345', vetClinicId),
+    ).rejects.toThrow(ClinicAccessService.INVALID_CODE_MESSAGE);
+  });
+
+  it('rejects malformed codes without querying the database', async () => {
+    await expect(service.redeemShareCode('ABC', vetClinicId)).rejects.toThrow(
+      ClinicAccessService.INVALID_CODE_MESSAGE,
+    );
+    expect(shareCodeModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a code whose pet now belongs to someone else', async () => {
+    shareCodeModel.findOneAndUpdate.mockReturnValue({
+      exec: jest.fn().mockResolvedValue({
+        petId: new Types.ObjectId(petId),
+        ownerId: new Types.ObjectId(ownerId),
+      }),
+    });
+    internalPetsService.findActivePetsByIds.mockResolvedValue([
+      { id: petId, owner: { id: new Types.ObjectId().toString() } },
+    ]);
+
+    await expect(
+      service.redeemShareCode('ABCD-2345', vetClinicId),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('checks ownership before listing or revoking clinic access', async () => {
+    vetBackendClient.listClinicAccessForPet.mockResolvedValue([
+      {
+        clinicId: vetClinicId,
+        clinicName: 'Vet Clinic',
+        grantedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    vetBackendClient.revokeClinicAccess.mockResolvedValue(true);
+
+    const list = await service.listClinicAccess(ownerId, petId);
+    const revoked = await service.revokeClinicAccess(
+      ownerId,
+      petId,
+      vetClinicId,
+    );
+
+    expect(petOwnershipService.assertPetBelongsToOwner).toHaveBeenCalledTimes(
+      2,
+    );
+    expect(list[0]?.grantedAt).toBeInstanceOf(Date);
+    expect(revoked).toBe(true);
+    expect(vetBackendClient.revokeClinicAccess).toHaveBeenCalledWith(
+      petId,
+      vetClinicId,
+    );
+  });
+});
