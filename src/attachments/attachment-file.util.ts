@@ -75,6 +75,20 @@ export function assertAttachmentAllowed(
 }
 
 /**
+ * Multer (busboy) reads multipart file names as latin1, so "Krūtinės.pdf"
+ * arrives as "KrÅ«tinÄ\x97s.pdf". Turn such names back into UTF-8; names that
+ * are not valid UTF-8 bytes are kept as they came.
+ */
+export function decodeMultipartFileName(name: string): string {
+  // eslint-disable-next-line no-control-regex
+  if (/[^\u0000-\u00ff]/.test(name)) {
+    return name;
+  }
+  const decoded = Buffer.from(name, 'latin1').toString('utf8');
+  return decoded.includes('\ufffd') ? name : decoded;
+}
+
+/**
  * A safe display/download name: no paths or control characters, at most
  * 120 characters, and the extension that matches the real file type.
  */
@@ -83,7 +97,7 @@ export function sanitizeAttachmentFileName(
   contentType: AttachmentContentType,
 ): string {
   const extension = EXTENSION[contentType];
-  const baseName = (original ?? '')
+  const baseName = decodeMultipartFileName(original ?? '')
     .normalize('NFC')
     .split(/[\\/]/)
     .pop()!

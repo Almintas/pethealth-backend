@@ -3,6 +3,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   assertAttachmentAllowed,
   contentDisposition,
+  decodeMultipartFileName,
   detectAttachmentContentType,
   sanitizeAttachmentFileName,
 } from './attachment-file.util';
@@ -55,6 +56,18 @@ describe('attachment files', () => {
     expect(
       sanitizeAttachmentFileName(`${'a'.repeat(300)}.pdf`, 'application/pdf'),
     ).toHaveLength(114);
+  });
+
+  it('repairs UTF-8 names that multipart parsing read as latin1', () => {
+    const mangled = Buffer.from('Krūtinės rentgenas.pdf', 'utf8').toString(
+      'latin1',
+    );
+    expect(decodeMultipartFileName(mangled)).toBe('Krūtinės rentgenas.pdf');
+    expect(decodeMultipartFileName('Krūtinės.pdf')).toBe('Krūtinės.pdf');
+    expect(decodeMultipartFileName('café.pdf')).toBe('café.pdf');
+    expect(sanitizeAttachmentFileName(mangled, 'application/pdf')).toBe(
+      'Krūtinės rentgenas.pdf',
+    );
   });
 
   it('builds a download header that keeps non-ASCII names', () => {
