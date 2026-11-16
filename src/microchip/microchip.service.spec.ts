@@ -39,8 +39,9 @@ describe('MicrochipService', () => {
     expect(matches).toEqual([
       { petId: petId.toString(), name: 'Rex', species: 'Dog', breed: null },
     ]);
-    const filter = petModel.find.mock.calls[0][0] as Record<string, unknown>;
-    expect(filter.deletedAt).toBeNull();
+    expect(petModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({ deletedAt: null }),
+    );
   });
 
   it('rejects invalid chip numbers', async () => {
@@ -64,15 +65,20 @@ describe('MicrochipService', () => {
     });
 
     expect(sent).toBe(true);
-    const email = emailService.send.mock.calls[0][0] as {
-      to: string;
-      subject: string;
-      html: string;
-    };
-    expect(email.to).toBe('ona@example.com');
-    expect(email.subject).toContain('Rex');
-    expect(email.html).toContain('+370 600 00000');
-    expect(email.html).toContain(`https://app.test/pets/${petId.toString()}`);
+    expect(emailService.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'ona@example.com',
+        subject: expect.stringContaining('Rex') as unknown,
+        html: expect.stringContaining('+370 600 00000') as unknown,
+      }),
+    );
+    expect(emailService.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        html: expect.stringContaining(
+          `https://app.test/pets/${petId.toString()}`,
+        ) as unknown,
+      }),
+    );
   });
 
   it('refuses to email the owner of a pet with another chip', async () => {
