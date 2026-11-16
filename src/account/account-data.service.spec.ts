@@ -1,4 +1,4 @@
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { AccountDataService } from './account-data.service';
 
@@ -152,7 +152,7 @@ describe('AccountDataService', () => {
 
       await expect(
         service.deleteAccount(userId.toString(), 'wrong'),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(petModel.deleteMany).not.toHaveBeenCalled();
       expect(userModel.deleteOne).not.toHaveBeenCalled();
     });
