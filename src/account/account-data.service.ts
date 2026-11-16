@@ -205,9 +205,8 @@ export class AccountDataService {
       ? await this.passwordService.compare(password, user.passwordHash)
       : false;
     if (!passwordOk) {
-      throw new UnauthorizedException(
-        AccountDataService.WRONG_PASSWORD_MESSAGE,
-      );
+      // 403, not 401: the session is fine, only the confirmation failed.
+      throw new ForbiddenException(AccountDataService.WRONG_PASSWORD_MESSAGE);
     }
 
     const pets = await this.petModel.find({ ownerId: userObjectId }).exec();
