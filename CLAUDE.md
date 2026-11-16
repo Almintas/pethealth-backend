@@ -51,30 +51,40 @@ The owner is Lithuanian and talks in Lithuanian — answer in Lithuanian.
   OWNER_GRAPHQL_URL). Owners download via owner REST `/medical-records/:recordId/attachments/:id` (JWT) and see
   `attachments` on records. Multer reads file names as latin1 — both backends decode them back to UTF-8.
   Audit: CREATED/DELETED + ATTACHMENT. Files go with record/pet/account deletion; export lists them.
+- Appointments a clinic scheduled have `vetClinicId`; the owner app shows them read-only ("Scheduled by the clinic").
+- Reminders have `managedBy` OWNER / CLINIC / AUTOMATIC (owner reminder schema: `clinicId`, `clinicName`,
+  `createdByName`, `automatic`). Owners edit/delete only OWNER ones; CLINIC/AUTOMATIC can be completed or dismissed.
+  Clinics: vet GraphQL `patientReminders`, `createVetReminder`, `deleteVetReminder` → owner internal
+  `internalRemindersForPetForVet` / `internalCreateReminderForVet` / `internalDeleteReminderForVet` (clinic + pet must
+  match). Clinics never see the owner's own reminders. `VaccinationReminderSync` (owner backend) keeps one AUTOMATIC
+  VACCINATION reminder per vaccination with `nextDueAt` (moved + re-pending on date change, removed with the
+  vaccination); existing vaccinations get one on their next update. Audit: CREATED/DELETED + REMINDER.
 
 ## Tests and CI (all must stay green)
 
 - Each repo: unit tests + lint + build in GitHub Actions.
 - Owner backend: `Integration (owner + clinic API)` workflow runs both backends + mongo:7 (`test/integration/full-flow.mjs` in vet-backend).
 - E2E (Playwright 1.56.1, ubuntu-24.04, own `e2e/package.json`) runs all four apps; workflow in owner frontend and vet frontend.
-  15 serial steps: vet register/approve → clinic → owner + pet → share code → claim → reuse rejected →
-  vaccination → vet attaches lab result to a record → owner sees it + activity log → owner downloads health
-  passport PDF → owner downloads the attachment → receptionist invite → revoke → owner export + delete account → vet 2FA.
-- The integration test (`full-flow.mjs`) also uploads an attachment via the vet API and checks the owner download.
+  16 serial steps: vet register/approve → clinic → owner + pet → share code → claim → reuse rejected →
+  vaccination → vet attaches lab result to a record → vet sets a reminder for the owner → owner sees it all + activity
+  log (clinic reminder read-only) → owner downloads health passport PDF → owner downloads the attachment →
+  receptionist invite → revoke → owner export + delete account → vet 2FA.
+- The integration test (`full-flow.mjs`) also uploads an attachment via the vet API and checks the owner download,
+  and sets a clinic reminder that the owner sees but cannot delete.
 - No local node_modules/network in the Claude workspace: verify via CI (`gh run list -R Almintas/<repo> -b dev`).
   Don't run global prettier on whole folders — it doesn't pick up repo style; edit narrowly.
 
 ## Status (2026-11-16)
 
 Done: core owner/clinic flows, consent codes, audit log, clinic team + invites, admin approval,
-browser E2E, rate limits, admin audit, 2FA, GDPR data export + account deletion, pet health passport PDF
-(all on `main`), attachments on medical records (on `dev`; ask before merging to `main`).
+browser E2E, rate limits, admin audit, 2FA, GDPR data export + account deletion, pet health passport PDF,
+attachments on medical records (all on `main`), clinic appointments read-only for owners + clinic reminders +
+automatic vaccination reminders (on `dev`; ask before merging to `main`).
 
 ## Next, in order
 
-1. Owner sees clinic appointments and reminders.
-2. Microchip search for clinics.
-3. Sentry preparation (both backends + frontends).
+1. Microchip search for clinics.
+2. Sentry preparation (both backends + frontends).
 
 ## Production notes for the owner
 
