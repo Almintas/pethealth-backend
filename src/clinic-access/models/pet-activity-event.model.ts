@@ -10,13 +10,13 @@ export class PetActivityEventModel {
 
   @Field(() => String, {
     description:
-      'VIEWED, CREATED, UPDATED, CANCELLED, ACCESS_GRANTED or ACCESS_REVOKED',
+      'VIEWED, CREATED, UPDATED, CANCELLED, DELETED, ACCESS_GRANTED or ACCESS_REVOKED',
   })
   action!: string;
 
   @Field(() => String, {
     description:
-      'PATIENT, MEDICAL_RECORD, MEDICATION, VACCINATION or APPOINTMENT',
+      'PATIENT, MEDICAL_RECORD, MEDICATION, VACCINATION, APPOINTMENT or ATTACHMENT',
   })
   entityType!: string;
 
