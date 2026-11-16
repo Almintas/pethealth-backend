@@ -1,3 +1,4 @@
+import { AttachmentFilesService } from '../attachments/attachment-files.service';
 import {
   BadRequestException,
   InternalServerErrorException,
@@ -65,6 +66,10 @@ describe('PetsService', () => {
     deletePetPhoto: jest.fn().mockResolvedValue(undefined),
   };
 
+  const attachmentFilesMock = {
+    deleteForPets: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -95,6 +100,10 @@ describe('PetsService', () => {
         {
           provide: PET_PHOTO_STORAGE,
           useValue: petPhotoStorageMock,
+        },
+        {
+          provide: AttachmentFilesService,
+          useValue: attachmentFilesMock,
         },
       ],
     }).compile();

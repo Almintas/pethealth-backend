@@ -1,3 +1,4 @@
+import { AttachmentFilesService } from '../attachments/attachment-files.service';
 import {
   BadRequestException,
   Inject,
@@ -59,6 +60,7 @@ export class PetsService {
     private readonly appointmentModel: Model<AppointmentDocument>,
     @InjectModel(Reminder.name)
     private readonly reminderModel: Model<ReminderDocument>,
+    private readonly attachmentFiles: AttachmentFilesService,
   ) {}
 
   async createPet(ownerId: string, input: CreatePetInput): Promise<PetModel> {
@@ -250,6 +252,7 @@ export class PetsService {
   private async deletePetRelatedRecords(
     petObjectId: Types.ObjectId,
   ): Promise<void> {
+    await this.attachmentFiles.deleteForPets([petObjectId]);
     await Promise.all([
       this.medicalRecordModel.deleteMany({ petId: petObjectId }).exec(),
       this.vaccinationModel.deleteMany({ petId: petObjectId }).exec(),

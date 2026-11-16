@@ -1,3 +1,4 @@
+import { AttachmentFilesService } from '../attachments/attachment-files.service';
 import {
   BadRequestException,
   Injectable,
@@ -33,6 +34,7 @@ export class MedicalRecordsService {
     @InjectModel(Pet.name)
     private readonly petModel: Model<PetDocument>,
     private readonly petOwnershipService: PetOwnershipService,
+    private readonly attachmentFiles: AttachmentFilesService,
   ) {}
 
   async createMedicalRecord(
@@ -149,6 +151,7 @@ export class MedicalRecordsService {
   ): Promise<boolean> {
     const record = await this.findOwnedMedicalRecordDocument(ownerId, recordId);
     await record.deleteOne();
+    await this.attachmentFiles.deleteForRecord(record._id);
     return true;
   }
 

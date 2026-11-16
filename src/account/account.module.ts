@@ -1,3 +1,4 @@
+import { AttachmentFilesModule } from '../attachments/attachment-files.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import {
@@ -41,6 +42,7 @@ import { AccountResolver } from './account.resolver';
 @Module({
   imports: [
     AuthModule,
+    AttachmentFilesModule,
     ClinicAccessModule,
     PetPhotosModule,
     MongooseModule.forFeature([

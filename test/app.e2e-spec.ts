@@ -638,6 +638,190 @@ describe('PetHealth GraphQL (e2e)', () => {
     });
   });
 
+  describe('medical record attachments', () => {
+    const pdf = Buffer.from('%PDF-1.4\n% e2e attachment\n%%EOF\n');
+
+    function binaryParser(
+      res: NodeJS.ReadableStream,
+      callback: (error: Error | null, body: Buffer) => void,
+    ): void {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => callback(null, Buffer.concat(chunks)));
+    }
+
+    async function ownerWithRecord(label: string) {
+      const owner = await registerUser(label);
+      let token = await loginUser(owner.email, owner.password);
+      const pet = await postGraphql<{ createPet: { id: string } }>(
+        app,
+        CREATE_PET_MUTATION,
+        { input: { name: 'Rex', species: 'Dog' } },
+        token,
+      );
+      const petId = pet.body.data!.createPet.id;
+
+      await setUserRole(owner.id, UserRole.VET);
+      const vetToken = await loginUser(owner.email, owner.password);
+      const record = await postGraphql<{
+        createMedicalRecord: { id: string };
+      }>(
+        app,
+        CREATE_MEDICAL_RECORD_MUTATION,
+        {
+          input: {
+            petId,
+            date: new Date('2026-11-01T10:00:00.000Z').toISOString(),
+            type: 'X-ray',
+            title: 'Chest X-ray',
+          },
+        },
+        vetToken,
+      );
+      expect(record.body.errors).toBeUndefined();
+      await setUserRole(owner.id, UserRole.USER);
+      token = await loginUser(owner.email, owner.password);
+      return {
+        token,
+        petId,
+        recordId: record.body.data!.createMedicalRecord.id,
+      };
+    }
+
+    function uploadAsClinic(recordId: string, file: Buffer, name: string) {
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      return request(httpServer)
+        .post(`/internal/medical-records/${recordId}/attachments`)
+        .set('x-pethealth-service-secret', E2E_SERVICE_SECRET)
+        .field('clinicId', 'clinic-1')
+        .field('clinicName', 'Paws Clinic')
+        .field('uploadedByName', 'Dr Ona')
+        .attach('file', file, {
+          filename: name,
+          contentType: 'application/pdf',
+        });
+    }
+
+    it('lets a clinic attach a file that only the owner can download', async () => {
+      const { token, recordId } = await ownerWithRecord('attach-owner');
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+
+      const unauthorized = await request(httpServer)
+        .post(`/internal/medical-records/${recordId}/attachments`)
+        .attach('file', pdf, 'scan.pdf');
+      expect(unauthorized.status).toBe(401);
+
+      const notAllowed = await uploadAsClinic(
+        recordId,
+        Buffer.from('<html></html>'),
+        'page.pdf',
+      );
+      expect(notAllowed.status).toBe(400);
+
+      const uploaded = await uploadAsClinic(
+        recordId,
+        pdf,
+        'Krūtinės rentgenas.pdf',
+      );
+      expect(uploaded.status).toBe(201);
+      const attachment = uploaded.body as { id: string; fileName: string };
+      expect(attachment.fileName).toBe('Krūtinės rentgenas.pdf');
+
+      const listed = await postGraphql<{
+        medicalRecord: {
+          attachments: { id: string; fileName: string; clinicName: string }[];
+        };
+      }>(
+        app,
+        `query ($id: ID!) { medicalRecord(id: $id) { attachments { id fileName clinicName size } } }`,
+        { id: recordId },
+        token,
+      );
+      expect(listed.body.errors).toBeUndefined();
+      expect(listed.body.data?.medicalRecord.attachments).toEqual([
+        expect.objectContaining({
+          id: attachment.id,
+          clinicName: 'Paws Clinic',
+          size: pdf.length,
+        }),
+      ]);
+
+      const download = await request(httpServer)
+        .get(`/medical-records/${recordId}/attachments/${attachment.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .buffer(true)
+        .parse(binaryParser);
+      expect(download.status).toBe(200);
+      const headers = download.headers as Record<string, string>;
+      expect(headers['content-type']).toBe('application/pdf');
+      expect(headers['content-disposition']).toContain(
+        "filename*=UTF-8''Kr%C5%ABtin%C4%97s%20rentgenas.pdf",
+      );
+      expect(Buffer.compare(download.body as Buffer, pdf)).toBe(0);
+
+      const stranger = await registerUser('attach-stranger');
+      const strangerToken = await loginUser(stranger.email, stranger.password);
+      const denied = await request(httpServer)
+        .get(`/medical-records/${recordId}/attachments/${attachment.id}`)
+        .set('Authorization', `Bearer ${strangerToken}`);
+      expect(denied.status).toBe(404);
+
+      const anonymous = await request(httpServer).get(
+        `/medical-records/${recordId}/attachments/${attachment.id}`,
+      );
+      expect(anonymous.status).toBe(401);
+    });
+
+    it('lets only the uploading clinic remove a file', async () => {
+      const { recordId } = await ownerWithRecord('attach-delete');
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      const uploaded = await uploadAsClinic(recordId, pdf, 'lab.pdf');
+      const { id } = uploaded.body as { id: string };
+      const path = `/internal/medical-records/${recordId}/attachments/${id}`;
+
+      const otherClinic = await request(httpServer)
+        .delete(`${path}?clinicId=clinic-2`)
+        .set('x-pethealth-service-secret', E2E_SERVICE_SECRET);
+      expect(otherClinic.status).toBe(403);
+
+      const removed = await request(httpServer)
+        .delete(`${path}?clinicId=clinic-1`)
+        .set('x-pethealth-service-secret', E2E_SERVICE_SECRET);
+      expect(removed.status).toBe(200);
+      expect((removed.body as { fileName: string }).fileName).toBe('lab.pdf');
+
+      const gone = await request(httpServer)
+        .get(path)
+        .set('x-pethealth-service-secret', E2E_SERVICE_SECRET);
+      expect(gone.status).toBe(404);
+    });
+
+    it('deletes the files together with the pet', async () => {
+      const { token, petId, recordId } = await ownerWithRecord('attach-pet');
+      await uploadAsClinic(recordId, pdf, 'a.pdf');
+      await uploadAsClinic(recordId, pdf, 'b.pdf');
+      const connection = app.get<Connection>(getConnectionToken());
+      const files = connection.collection('medical_attachment_files.files');
+      const petFiles = { 'metadata.petId': petId };
+      expect(await files.countDocuments(petFiles)).toBe(2);
+
+      const deleted = await postGraphql(
+        app,
+        DELETE_PET_MUTATION,
+        { id: petId },
+        token,
+      );
+      expect(deleted.body.errors).toBeUndefined();
+
+      expect(await files.countDocuments(petFiles)).toBe(0);
+      expect(
+        await connection
+          .collection('medical_record_attachments')
+          .countDocuments({ medicalRecordId: new Types.ObjectId(recordId) }),
+      ).toBe(0);
+    });
+  });
+
   describe('HTTP security', () => {
     it('includes Helmet security headers on GraphQL responses', async () => {
       const httpServer = app.getHttpServer() as Parameters<typeof request>[0];

@@ -18,6 +18,7 @@ import { AuthModule } from './auth/auth.module';
 import { InternalServicesModule } from './internal-services/internal-services.module';
 import { ClinicAccessModule } from './clinic-access/clinic-access.module';
 import { AccountModule } from './account/account.module';
+import { AttachmentsModule } from './attachments/attachments.module';
 import { HealthModule } from './health/health.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
 import { PetsModule } from './pets/pets.module';
@@ -91,6 +92,7 @@ function resolveGraphqlSchemaPath(): string {
     InternalServicesModule,
     ClinicAccessModule,
     AccountModule,
+    AttachmentsModule,
     MedicalRecordsModule,
     VaccinationsModule,
     MedicationsModule,

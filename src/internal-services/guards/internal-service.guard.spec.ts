@@ -23,8 +23,14 @@ describe('InternalServiceGuard', () => {
     jest
       .spyOn(GqlExecutionContext, 'create')
       .mockReturnValue(gqlContext as unknown as GqlExecutionContext);
-    return {} as ExecutionContext;
+    return { getType: () => 'graphql' } as unknown as ExecutionContext;
   };
+
+  const buildHttpContext = (headers: Record<string, string>) =>
+    ({
+      getType: () => 'http',
+      switchToHttp: () => ({ getRequest: () => ({ headers }) }),
+    }) as unknown as ExecutionContext;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -45,6 +51,21 @@ describe('InternalServiceGuard', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  it('guards REST requests the same way', () => {
+    expect(() =>
+      guard.canActivate(
+        buildHttpContext({
+          [INTERNAL_SERVICE_SECRET_HEADER]: 'test-service-secret-value-32chars',
+        }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      guard.canActivate(
+        buildHttpContext({ [INTERNAL_SERVICE_SECRET_HEADER]: 'wrong-secret' }),
+      ),
+    ).toThrow(UnauthorizedException);
   });
 
   it('rejects requests with an invalid service secret', () => {

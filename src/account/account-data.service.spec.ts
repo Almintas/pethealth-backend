@@ -10,6 +10,7 @@ const leanOf = (value: unknown) => ({ lean: () => execOf(value) });
 describe('AccountDataService', () => {
   const userId = new Types.ObjectId();
   const petId = new Types.ObjectId();
+  const recordId = new Types.ObjectId();
 
   const userModel = { findById: jest.fn(), deleteOne: jest.fn() };
   const petModel = { find: jest.fn(), deleteMany: jest.fn() };
@@ -29,6 +30,10 @@ describe('AccountDataService', () => {
     revokeClinicAccess: jest.fn(),
   };
   const passwordService = { compare: jest.fn() };
+  const attachmentFiles = {
+    listForPets: jest.fn(),
+    deleteForPets: jest.fn(),
+  };
 
   let service: AccountDataService;
 
@@ -49,6 +54,8 @@ describe('AccountDataService', () => {
     }
     userModel.deleteOne.mockReturnValue(execOf({ deletedCount: 1 }));
     petPhotoStorage.deletePetPhoto.mockResolvedValue(undefined);
+    attachmentFiles.listForPets.mockResolvedValue([]);
+    attachmentFiles.deleteForPets.mockResolvedValue(undefined);
     service = new AccountDataService(
       userModel as never,
       petModel as never,
@@ -63,6 +70,7 @@ describe('AccountDataService', () => {
       petPhotoStorage as never,
       vetBackendClient as never,
       passwordService as never,
+      attachmentFiles as never,
     );
   });
 
@@ -87,12 +95,19 @@ describe('AccountDataService', () => {
       vaccinationModel.find.mockReturnValue(
         leanOf([{ _id: new Types.ObjectId(), petId, vaccineName: 'Rabies' }]),
       );
-      for (const model of [
-        medicalRecordModel,
-        medicationModel,
-        appointmentModel,
-        reminderModel,
-      ]) {
+      medicalRecordModel.find.mockReturnValue(
+        leanOf([{ _id: recordId, petId, title: 'X-ray' }]),
+      );
+      attachmentFiles.listForPets.mockResolvedValue([
+        {
+          id: 'a1',
+          medicalRecordId: recordId.toString(),
+          fileName: 'xray.png',
+          contentType: 'image/png',
+          size: 10,
+        },
+      ]);
+      for (const model of [medicationModel, appointmentModel, reminderModel]) {
         model.find.mockReturnValue(leanOf([]));
       }
     });
@@ -120,6 +135,12 @@ describe('AccountDataService', () => {
         id: petId.toString(),
         name: 'Luna',
         vaccinations: [expect.objectContaining({ vaccineName: 'Rabies' })],
+        medicalRecords: [
+          expect.objectContaining({
+            title: 'X-ray',
+            attachments: [expect.objectContaining({ fileName: 'xray.png' })],
+          }),
+        ],
         clinicAccess: [{ clinicId: 'c1', clinicName: 'Paws' }],
       });
       expect(data.pets[0]).not.toHaveProperty('photoStorageKey');
@@ -191,6 +212,7 @@ describe('AccountDataService', () => {
       expect(petModel.deleteMany).toHaveBeenCalledWith({ ownerId: userId });
       expect(userModel.deleteOne).toHaveBeenCalledWith({ _id: userId });
       expect(petPhotoStorage.deletePetPhoto).toHaveBeenCalledWith('photo-key');
+      expect(attachmentFiles.deleteForPets).toHaveBeenCalledWith([petId]);
     });
 
     it('deletes the account even if the clinic system is unreachable', async () => {

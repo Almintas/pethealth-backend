@@ -1,3 +1,4 @@
+import { AttachmentFilesService } from '../attachments/attachment-files.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -67,6 +68,10 @@ describe('MedicalRecordsService', () => {
         {
           provide: getModelToken(Pet.name),
           useValue: petModelMock,
+        },
+        {
+          provide: AttachmentFilesService,
+          useValue: { deleteForRecord: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();

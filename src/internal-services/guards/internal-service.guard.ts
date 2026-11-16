@@ -23,10 +23,16 @@ export class InternalServiceGuard implements CanActivate {
       );
     }
 
-    const ctx = GqlExecutionContext.create(context);
-    const request = ctx.getContext<{
-      req: { headers: Record<string, string | string[] | undefined> };
-    }>().req;
+    type RequestWithHeaders = {
+      headers: Record<string, string | string[] | undefined>;
+    };
+    // Also guards the internal REST endpoints (attachment files).
+    const request =
+      context.getType() === 'http'
+        ? context.switchToHttp().getRequest<RequestWithHeaders>()
+        : GqlExecutionContext.create(context).getContext<{
+            req: RequestWithHeaders;
+          }>().req;
     const provided = this.readHeaderSecret(request.headers);
     if (!provided || !this.secretsEqual(provided, expectedSecret)) {
       throw new UnauthorizedException('Invalid internal service credentials');

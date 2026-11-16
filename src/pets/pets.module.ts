@@ -1,3 +1,4 @@
+import { AttachmentFilesModule } from '../attachments/attachment-files.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
@@ -29,6 +30,7 @@ import { PetsService } from './pets.service';
   imports: [
     AuthModule,
     PetPhotosModule,
+    AttachmentFilesModule,
     MongooseModule.forFeature([
       { name: Pet.name, schema: PetSchema },
       { name: MedicalRecord.name, schema: MedicalRecordSchema },

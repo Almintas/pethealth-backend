@@ -43,6 +43,7 @@ import {
   ReminderDocument,
 } from '../reminders/schemas/reminder.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { AttachmentFilesService } from '../attachments/attachment-files.service';
 import {
   Vaccination,
   VaccinationDocument,
@@ -102,6 +103,7 @@ export class AccountDataService {
     private readonly petPhotoStorage: PetPhotoStorage,
     private readonly vetBackendClient: VetBackendClient,
     private readonly passwordService: PasswordService,
+    private readonly attachmentFiles: AttachmentFilesService,
   ) {}
 
   /** Everything PetHealth holds about the owner, as pretty-printed JSON. */
@@ -130,41 +132,59 @@ export class AccountDataService {
       return grouped;
     };
 
-    const [records, vaccinations, medications, appointments, reminders] =
-      await Promise.all([
-        this.medicalRecordModel
-          .find({ petId: { $in: petIds } })
-          .lean()
-          .exec(),
-        this.vaccinationModel
-          .find({ petId: { $in: petIds } })
-          .lean()
-          .exec(),
-        this.medicationModel
-          .find({ petId: { $in: petIds } })
-          .lean()
-          .exec(),
-        this.appointmentModel
-          .find({ petId: { $in: petIds } })
-          .lean()
-          .exec(),
-        this.reminderModel
-          .find({ petId: { $in: petIds } })
-          .lean()
-          .exec(),
-      ]);
+    const [
+      records,
+      vaccinations,
+      medications,
+      appointments,
+      reminders,
+      attachments,
+    ] = await Promise.all([
+      this.medicalRecordModel
+        .find({ petId: { $in: petIds } })
+        .lean()
+        .exec(),
+      this.vaccinationModel
+        .find({ petId: { $in: petIds } })
+        .lean()
+        .exec(),
+      this.medicationModel
+        .find({ petId: { $in: petIds } })
+        .lean()
+        .exec(),
+      this.appointmentModel
+        .find({ petId: { $in: petIds } })
+        .lean()
+        .exec(),
+      this.reminderModel
+        .find({ petId: { $in: petIds } })
+        .lean()
+        .exec(),
+      this.attachmentFiles.listForPets(petIds),
+    ]);
     const recordsByPet = byPet(records);
     const vaccinationsByPet = byPet(vaccinations);
     const medicationsByPet = byPet(medications);
     const appointmentsByPet = byPet(appointments);
     const remindersByPet = byPet(reminders);
+    // File names and details only; the files are downloaded from each record.
+    const attachmentsByRecord = new Map<string, unknown[]>();
+    for (const attachment of attachments) {
+      attachmentsByRecord.set(attachment.medicalRecordId, [
+        ...(attachmentsByRecord.get(attachment.medicalRecordId) ?? []),
+        attachment,
+      ]);
+    }
 
     const exportedPets = await Promise.all(
       pets.map(async (pet) => {
         const id = pet._id.toString();
         return {
           ...clean(pet as unknown as Record<string, unknown>),
-          medicalRecords: recordsByPet.get(id) ?? [],
+          medicalRecords: (recordsByPet.get(id) ?? []).map((record) => ({
+            ...record,
+            attachments: attachmentsByRecord.get(String(record.id)) ?? [],
+          })),
           vaccinations: vaccinationsByPet.get(id) ?? [],
           medications: medicationsByPet.get(id) ?? [],
           appointments: appointmentsByPet.get(id) ?? [],
@@ -216,6 +236,7 @@ export class AccountDataService {
       await this.revokeClinicAccess(pet._id.toString());
     }
 
+    await this.attachmentFiles.deleteForPets(petIds);
     await Promise.all([
       this.medicalRecordModel.deleteMany({ petId: { $in: petIds } }).exec(),
       this.vaccinationModel.deleteMany({ petId: { $in: petIds } }).exec(),
