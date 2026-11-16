@@ -949,8 +949,8 @@ describe('PetHealth GraphQL (e2e)', () => {
       ]);
 
       const otherClinic = await postInternal(
-        `mutation ($id: ID!, $clinicId: ID!) { internalDeleteReminderForVet(reminderId: $id, clinicId: $clinicId) { id } }`,
-        { id: clinicReminderId, clinicId: 'clinic-2' },
+        `mutation ($id: ID!, $clinicId: ID!, $petId: ID!) { internalDeleteReminderForVet(reminderId: $id, clinicId: $clinicId, petId: $petId) { id } }`,
+        { id: clinicReminderId, clinicId: 'clinic-2', petId },
       );
       expectGraphqlErrors(otherClinic, 'only the clinic that set');
     });

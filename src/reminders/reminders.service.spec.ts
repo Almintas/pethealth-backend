@@ -490,11 +490,11 @@ describe('RemindersService', () => {
       });
 
       await expect(
-        service.deleteForClinic(reminderId, 'clinic-2'),
+        service.deleteForClinic(reminderId, 'clinic-2', petId),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(document.deleteOne).not.toHaveBeenCalled();
 
-      await service.deleteForClinic(reminderId, 'clinic-1');
+      await service.deleteForClinic(reminderId, 'clinic-1', petId);
       expect(document.deleteOne).toHaveBeenCalled();
     });
 

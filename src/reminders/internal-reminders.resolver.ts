@@ -34,7 +34,8 @@ export class InternalRemindersResolver {
   internalDeleteReminderForVet(
     @Args('reminderId', { type: () => ID }) reminderId: string,
     @Args('clinicId', { type: () => ID }) clinicId: string,
+    @Args('petId', { type: () => ID }) petId: string,
   ): Promise<ReminderModel> {
-    return this.remindersService.deleteForClinic(reminderId, clinicId);
+    return this.remindersService.deleteForClinic(reminderId, clinicId, petId);
   }
 }

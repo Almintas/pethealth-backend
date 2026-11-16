@@ -242,12 +242,13 @@ export class RemindersService {
   async deleteForClinic(
     reminderId: string,
     clinicId: string,
+    petId: string,
   ): Promise<ReminderModel> {
     if (!isValidObjectId(reminderId)) {
       throw new NotFoundException('Reminder not found');
     }
     const reminder = await this.reminderModel.findById(reminderId).exec();
-    if (!reminder) {
+    if (!reminder || reminder.petId.toString() !== petId) {
       throw new NotFoundException('Reminder not found');
     }
     if (reminder.clinicId !== clinicId) {
