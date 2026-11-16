@@ -39,30 +39,34 @@ The owner is Lithuanian and talks in Lithuanian — answer in Lithuanian.
 - Owner backend `src/account`: `exportMyData` (JSON string, internal fields stripped) and
   `deleteMyAccount(password)` (403 on a wrong password; revokes clinic access, deletes everything).
 - i18n: every UI string is in both LT and EN; parity tests enforce it. Lithuanian plurals use _one/_few/_many/_other.
+- Health passport PDF is built in the owner frontend (`src/features/pet-passport`): a small dependency-free
+  PDF writer with an embedded DejaVu Sans subset (Lithuanian letters render everywhere). Characters outside
+  the subset lose accents or become "?"; to add characters edit `scripts/generate-pdf-fonts.py` and rerun it.
+  No backend endpoint; it uses the existing GraphQL queries and frontend translations.
 
 ## Tests and CI (all must stay green)
 
 - Each repo: unit tests + lint + build in GitHub Actions.
 - Owner backend: `Integration (owner + clinic API)` workflow runs both backends + mongo:7 (`test/integration/full-flow.mjs` in vet-backend).
 - E2E (Playwright 1.56.1, ubuntu-24.04, own `e2e/package.json`) runs all four apps; workflow in owner frontend and vet frontend.
-  12 serial steps: vet register/approve → clinic → owner + pet → share code → claim → reuse rejected →
-  vaccination → owner sees it + activity log → receptionist invite → revoke → owner export + delete account → vet 2FA.
+  13 serial steps: vet register/approve → clinic → owner + pet → share code → claim → reuse rejected →
+  vaccination → owner sees it + activity log → owner downloads health passport PDF → receptionist invite →
+  revoke → owner export + delete account → vet 2FA.
 - No local node_modules/network in the Claude workspace: verify via CI (`gh run list -R Almintas/<repo> -b dev`).
   Don't run global prettier on whole folders — it doesn't pick up repo style; edit narrowly.
 
 ## Status (2026-11-16)
 
 Done: core owner/clinic flows, consent codes, audit log, clinic team + invites, admin approval,
-browser E2E, rate limits, admin audit, 2FA, GDPR data export + account deletion.
-GDPR work is on `dev`; ask before merging to `main`.
+browser E2E, rate limits, admin audit, 2FA, GDPR data export + account deletion (on `main`),
+pet health passport PDF (on `dev`; ask before merging to `main`).
 
 ## Next, in order
 
-1. Pet health passport as PDF (owner downloads; vaccinations, treatments, microchip, clinic info).
-2. Attachments on records (lab results, X-rays).
-3. Owner sees clinic appointments and reminders.
-4. Microchip search for clinics.
-5. Sentry preparation (both backends + frontends).
+1. Attachments on records (lab results, X-rays).
+2. Owner sees clinic appointments and reminders.
+3. Microchip search for clinics.
+4. Sentry preparation (both backends + frontends).
 
 ## Production notes for the owner
 
