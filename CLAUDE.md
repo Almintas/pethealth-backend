@@ -59,18 +59,24 @@ The owner is Lithuanian and talks in Lithuanian — answer in Lithuanian.
   match). Clinics never see the owner's own reminders. `VaccinationReminderSync` (owner backend) keeps one AUTOMATIC
   VACCINATION reminder per vaccination with `nextDueAt` (moved + re-pending on date change, removed with the
   vaccination); existing vaccinations get one on their next update. Audit: CREATED/DELETED + REMINDER.
+- Microchip search (vet `microchipSearch`, `notifyOwnerAboutFoundPet`; rate limits `microchipSearch` 30/15 min,
+  `microchipNotify` 10/h per IP): owner internal `internalPetsByMicrochipForVet` matches chips however typed
+  (regex over separators, `src/microchip`) and returns only pet name/species/breed + `hasAccess` (computed in vet).
+  Without consent the clinic can only trigger `internalNotifyOwnerPetFoundForVet` (re-checks the chip, emails the owner
+  the clinic contacts; false if no email provider). Audit: MICROCHIP_LOOKUP / OWNER_NOTIFIED on PATIENT.
 
 ## Tests and CI (all must stay green)
 
 - Each repo: unit tests + lint + build in GitHub Actions.
 - Owner backend: `Integration (owner + clinic API)` workflow runs both backends + mongo:7 (`test/integration/full-flow.mjs` in vet-backend).
 - E2E (Playwright 1.56.1, ubuntu-24.04, own `e2e/package.json`) runs all four apps; workflow in owner frontend and vet frontend.
-  16 serial steps: vet register/approve → clinic → owner + pet → share code → claim → reuse rejected →
+  Serial steps: vet register/approve → clinic → owner + pet → share code → claim → reuse rejected →
   vaccination → vet attaches lab result to a record → vet sets a reminder for the owner → owner sees it all + activity
   log (clinic reminder read-only) → owner downloads health passport PDF → owner downloads the attachment →
-  receptionist invite → revoke → owner export + delete account → vet 2FA.
+  receptionist invite → revoke → vet finds the pet by microchip without consent + notifies owner →
+  owner export + delete account → vet 2FA (17 steps).
 - The integration test (`full-flow.mjs`) also uploads an attachment via the vet API and checks the owner download,
-  and sets a clinic reminder that the owner sees but cannot delete.
+  and sets a clinic reminder that the owner sees but cannot delete, and searches a microchip with and without consent.
 - No local node_modules/network in the Claude workspace: verify via CI (`gh run list -R Almintas/<repo> -b dev`).
   Don't run global prettier on whole folders — it doesn't pick up repo style; edit narrowly.
 
@@ -78,13 +84,12 @@ The owner is Lithuanian and talks in Lithuanian — answer in Lithuanian.
 
 Done: core owner/clinic flows, consent codes, audit log, clinic team + invites, admin approval,
 browser E2E, rate limits, admin audit, 2FA, GDPR data export + account deletion, pet health passport PDF,
-attachments on medical records (all on `main`), clinic appointments read-only for owners + clinic reminders +
-automatic vaccination reminders (on `dev`; ask before merging to `main`).
+attachments on medical records, clinic appointments read-only for owners + clinic reminders + automatic
+vaccination reminders (all on `main`), microchip search for clinics (on `dev`; ask before merging to `main`).
 
 ## Next, in order
 
-1. Microchip search for clinics.
-2. Sentry preparation (both backends + frontends).
+1. Sentry preparation (both backends + frontends).
 
 ## Production notes for the owner
 
