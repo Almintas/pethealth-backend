@@ -216,6 +216,42 @@ export function buildClinicAccessGrantedEmail(params: {
   };
 }
 
+export function buildPetFoundEmail(params: {
+  firstName: string;
+  petName: string;
+  clinicName: string;
+  clinicPhone?: string | null;
+  clinicAddress?: string | null;
+  message?: string | null;
+  petUrl: string;
+}): { subject: string; html: string; text: string } {
+  const contact = [params.clinicPhone, params.clinicAddress]
+    .map((value) => value?.trim())
+    .filter(Boolean)
+    .map((value) => escapeHtml(value!))
+    .join('<br>');
+  const bodyHtml = `
+    <p>Hi ${escapeHtml(params.firstName)},</p>
+    <p>${escapeHtml(params.clinicName)} scanned ${escapeHtml(params.petName)}'s microchip and found them in PetHealth. Please contact the clinic.</p>
+    ${contact ? `<p style="margin:16px 0 0;"><strong>${escapeHtml(params.clinicName)}</strong><br>${contact}</p>` : ''}
+    ${params.message?.trim() ? `<p style="margin:16px 0 0;"><strong>Message from the clinic:</strong><br>${escapeHtml(params.message.trim())}</p>` : ''}
+    <p style="margin:16px 0 0;">The clinic did not get access to your pet's records or your contact details.</p>
+  `;
+
+  const { html, text } = layout({
+    title: `${params.petName} is at a veterinary clinic`,
+    bodyHtml,
+    ctaLabel: 'Open PetHealth',
+    ctaUrl: params.petUrl,
+  });
+
+  return {
+    subject: `${params.petName} was found and is at ${params.clinicName}`,
+    html,
+    text,
+  };
+}
+
 export function buildPasswordResetEmail(params: {
   userName: string;
   resetUrl: string;
