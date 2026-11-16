@@ -1,4 +1,5 @@
 import { Field, GraphQLISODateTime, ID, ObjectType } from '@nestjs/graphql';
+import { ReminderManagedBy } from '../enums/reminder-managed-by.enum';
 import { ReminderStatus } from '../enums/reminder-status.enum';
 import { ReminderType } from '../enums/reminder-type.enum';
 import { SourceType } from '../enums/source-type.enum';
@@ -37,6 +38,30 @@ export class ReminderModel {
     nullable: true,
   })
   sourceId?: string;
+
+  @Field(() => ReminderManagedBy, {
+    description:
+      'OWNER reminders can be edited; CLINIC and AUTOMATIC ones can only be completed or dismissed',
+  })
+  managedBy!: ReminderManagedBy;
+
+  @Field(() => String, {
+    description: 'Clinic that set the reminder or recorded its source',
+    nullable: true,
+  })
+  clinicName?: string;
+
+  @Field(() => String, {
+    description: 'Clinic staff member who set the reminder',
+    nullable: true,
+  })
+  createdByName?: string;
+
+  @Field(() => ID, {
+    description: 'Vet backend clinic id when a clinic set the reminder',
+    nullable: true,
+  })
+  clinicId?: string;
 
   @Field(() => GraphQLISODateTime, { description: 'Record creation time' })
   createdAt!: Date;

@@ -822,6 +822,210 @@ describe('PetHealth GraphQL (e2e)', () => {
     });
   });
 
+  describe('reminders from clinics', () => {
+    async function postInternal<T>(
+      query: string,
+      variables: Record<string, unknown>,
+    ): Promise<GraphqlResponse<T>> {
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      const response = await request(httpServer)
+        .post('/graphql')
+        .set('x-pethealth-service-secret', E2E_SERVICE_SECRET)
+        .send({ query, variables });
+      return response.body as GraphqlResponse<T>;
+    }
+
+    const REMINDERS_QUERY = `
+      query ($petId: ID!) {
+        reminders(petId: $petId) { id title type status managedBy clinicName createdByName }
+      }
+    `;
+
+    type ListedReminder = {
+      id: string;
+      title: string;
+      type: string;
+      status: string;
+      managedBy: string;
+      clinicName: string | null;
+    };
+
+    async function ownerWithPet(label: string) {
+      const owner = await registerUser(label);
+      const token = await loginUser(owner.email, owner.password);
+      const pet = await postGraphql<{ createPet: { id: string } }>(
+        app,
+        CREATE_PET_MUTATION,
+        { input: { name: 'Mia', species: 'Cat' } },
+        token,
+      );
+      return { owner, token, petId: pet.body.data!.createPet.id };
+    }
+
+    it('shows clinic reminders to the owner, who can only complete them', async () => {
+      const { token, petId } = await ownerWithPet('reminder-owner');
+
+      const own = await postGraphql<{ createReminder: { id: string } }>(
+        app,
+        `mutation ($input: CreateReminderInput!) { createReminder(input: $input) { id } }`,
+        {
+          input: {
+            petId,
+            type: 'GENERAL',
+            title: 'Buy food',
+            dueAt: new Date('2026-12-01T09:00:00.000Z').toISOString(),
+          },
+        },
+        token,
+      );
+      expect(own.body.errors).toBeUndefined();
+
+      const created = await postInternal<{
+        internalCreateReminderForVet: { id: string; managedBy: string };
+      }>(
+        `mutation ($input: InternalCreateReminderForVetInput!) {
+          internalCreateReminderForVet(input: $input) { id managedBy }
+        }`,
+        {
+          input: {
+            petId,
+            type: 'APPOINTMENT',
+            title: 'Follow-up visit',
+            message: 'Check the stitches',
+            dueAt: new Date('2026-12-10T09:00:00.000Z').toISOString(),
+            clinicId: 'clinic-1',
+            clinicName: 'Paws Clinic',
+            createdByName: 'Dr Ona',
+          },
+        },
+      );
+      expect(created.errors).toBeUndefined();
+      const clinicReminderId = created.data!.internalCreateReminderForVet.id;
+
+      const listed = await postGraphql<{ reminders: ListedReminder[] }>(
+        app,
+        REMINDERS_QUERY,
+        { petId },
+        token,
+      );
+      expect(listed.body.data?.reminders).toEqual([
+        expect.objectContaining({ title: 'Buy food', managedBy: 'OWNER' }),
+        expect.objectContaining({
+          id: clinicReminderId,
+          managedBy: 'CLINIC',
+          clinicName: 'Paws Clinic',
+        }),
+      ]);
+
+      const ownerDelete = await postGraphql(
+        app,
+        `mutation ($id: ID!) { deleteReminder(id: $id) }`,
+        { id: clinicReminderId },
+        token,
+      );
+      expectGraphqlErrors(
+        ownerDelete.body,
+        'comes from your veterinary clinic',
+      );
+
+      const completed = await postGraphql<{
+        completeReminder: { status: string };
+      }>(
+        app,
+        `mutation ($id: ID!) { completeReminder(id: $id) { status } }`,
+        { id: clinicReminderId },
+        token,
+      );
+      expect(completed.body.data?.completeReminder.status).toBe('COMPLETED');
+
+      const clinicView = await postInternal<{
+        internalRemindersForPetForVet: { title: string }[];
+      }>(
+        `query ($petId: ID!) { internalRemindersForPetForVet(petId: $petId) { title } }`,
+        { petId },
+      );
+      expect(clinicView.data?.internalRemindersForPetForVet).toEqual([
+        { title: 'Follow-up visit' },
+      ]);
+
+      const otherClinic = await postInternal(
+        `mutation ($id: ID!, $clinicId: ID!) { internalDeleteReminderForVet(reminderId: $id, clinicId: $clinicId) { id } }`,
+        { id: clinicReminderId, clinicId: 'clinic-2' },
+      );
+      expectGraphqlErrors(otherClinic, 'only the clinic that set');
+    });
+
+    it('creates and moves a reminder for a vaccination’s next due date', async () => {
+      const { owner, petId } = await ownerWithPet('reminder-vaccination');
+      await setUserRole(owner.id, UserRole.VET);
+      const vetToken = await loginUser(owner.email, owner.password);
+
+      const vaccination = await postGraphql<{
+        createVaccination: { id: string };
+      }>(
+        app,
+        `mutation ($input: CreateVaccinationInput!) { createVaccination(input: $input) { id } }`,
+        {
+          input: {
+            petId,
+            vaccineName: 'Rabies',
+            administeredAt: new Date('2026-03-12T00:00:00.000Z').toISOString(),
+            nextDueAt: new Date('2027-03-12T00:00:00.000Z').toISOString(),
+          },
+        },
+        vetToken,
+      );
+      expect(vaccination.body.errors).toBeUndefined();
+      const vaccinationId = vaccination.body.data!.createVaccination.id;
+
+      const listReminders = async () => {
+        const response = await postGraphql<{
+          reminders: (ListedReminder & { dueAt?: string })[];
+        }>(
+          app,
+          `query ($petId: ID!) { reminders(petId: $petId) { title type managedBy dueAt } }`,
+          { petId },
+          vetToken,
+        );
+        expect(response.body.errors).toBeUndefined();
+        return response.body.data!.reminders;
+      };
+
+      expect(await listReminders()).toEqual([
+        {
+          title: 'Rabies',
+          type: 'VACCINATION',
+          managedBy: 'AUTOMATIC',
+          dueAt: '2027-03-12T00:00:00.000Z',
+        },
+      ]);
+
+      const updated = await postGraphql(
+        app,
+        `mutation ($id: ID!, $input: UpdateVaccinationInput!) { updateVaccination(id: $id, input: $input) { id } }`,
+        {
+          id: vaccinationId,
+          input: {
+            nextDueAt: new Date('2027-04-01T00:00:00.000Z').toISOString(),
+          },
+        },
+        vetToken,
+      );
+      expect(updated.body.errors).toBeUndefined();
+      const moved = await listReminders();
+      expect(moved).toHaveLength(1);
+      expect(moved[0].dueAt).toBe('2027-04-01T00:00:00.000Z');
+
+      await postGraphql(
+        app,
+        `mutation ($id: ID!) { deleteVaccination(id: $id) }`,
+        { id: vaccinationId },
+        vetToken,
+      );
+      expect(await listReminders()).toEqual([]);
+    });
+  });
+
   describe('HTTP security', () => {
     it('includes Helmet security headers on GraphQL responses', async () => {
       const httpServer = app.getHttpServer() as Parameters<typeof request>[0];

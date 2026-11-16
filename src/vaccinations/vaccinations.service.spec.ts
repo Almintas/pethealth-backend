@@ -1,3 +1,4 @@
+import { VaccinationReminderSync } from './vaccination-reminder.sync';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -50,6 +51,11 @@ describe('VaccinationsService', () => {
     deleteOne: jest.fn().mockResolvedValue(undefined),
   });
 
+  const reminderSyncMock = {
+    sync: jest.fn().mockResolvedValue(undefined),
+    remove: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -67,6 +73,10 @@ describe('VaccinationsService', () => {
         {
           provide: getModelToken(Pet.name),
           useValue: petModelMock,
+        },
+        {
+          provide: VaccinationReminderSync,
+          useValue: reminderSyncMock,
         },
       ],
     }).compile();

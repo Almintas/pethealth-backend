@@ -41,6 +41,20 @@ export class Reminder {
   @Prop({ type: Types.ObjectId })
   sourceId?: Types.ObjectId;
 
+  /** Kept in sync with its source record (vaccination next due date). */
+  @Prop({ default: false })
+  automatic?: boolean;
+
+  /** Vet backend id of the clinic that set the reminder. */
+  @Prop({ trim: true, index: true })
+  clinicId?: string;
+
+  @Prop({ trim: true })
+  clinicName?: string;
+
+  @Prop({ trim: true })
+  createdByName?: string;
+
   createdAt!: Date;
 
   updatedAt!: Date;
@@ -50,3 +64,4 @@ export const ReminderSchema = SchemaFactory.createForClass(Reminder);
 
 ReminderSchema.index({ petId: 1, dueAt: 1 });
 ReminderSchema.index({ status: 1, dueAt: 1 });
+ReminderSchema.index({ sourceType: 1, sourceId: 1 });

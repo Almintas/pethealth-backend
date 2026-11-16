@@ -15,6 +15,7 @@ import { CreateVaccinationInput } from './dto/create-vaccination.input';
 import { UpdateVaccinationInput } from './dto/update-vaccination.input';
 import { VaccinationModel } from './models/vaccination.model';
 import { Vaccination, VaccinationDocument } from './schemas/vaccination.schema';
+import { VaccinationReminderSync } from './vaccination-reminder.sync';
 import {
   VaccinationsPageQuery,
   VaccinationsPageResult,
@@ -30,6 +31,7 @@ export class VaccinationsService {
     @InjectModel(Pet.name)
     private readonly petModel: Model<PetDocument>,
     private readonly petOwnershipService: PetOwnershipService,
+    private readonly reminderSync: VaccinationReminderSync,
   ) {}
 
   async createVaccination(
@@ -56,6 +58,7 @@ export class VaccinationsService {
         notes: dto.notes,
       });
 
+      await this.reminderSync.sync(created);
       return this.toVaccinationModel(created);
     } catch {
       throw new InternalServerErrorException('Failed to create vaccination');
@@ -141,6 +144,7 @@ export class VaccinationsService {
       if (vaccination.petId.toString() !== originalPetId) {
         throw new BadRequestException('petId cannot be changed');
       }
+      await this.reminderSync.sync(vaccination);
       return this.toVaccinationModel(vaccination);
     } catch (error: unknown) {
       if (error instanceof BadRequestException) {
@@ -159,6 +163,7 @@ export class VaccinationsService {
       vaccinationId,
     );
     await vaccination.deleteOne();
+    await this.reminderSync.remove(vaccination._id);
     return true;
   }
 
@@ -241,6 +246,7 @@ export class VaccinationsService {
         notes: dto.notes,
       });
 
+      await this.reminderSync.sync(created);
       return this.toVaccinationModel(created);
     } catch {
       throw new InternalServerErrorException('Failed to create vaccination');
@@ -291,6 +297,7 @@ export class VaccinationsService {
       if (vaccination.petId.toString() !== originalPetId) {
         throw new BadRequestException('petId cannot be changed');
       }
+      await this.reminderSync.sync(vaccination);
       return this.toVaccinationModel(vaccination);
     } catch (error: unknown) {
       if (error instanceof BadRequestException) {

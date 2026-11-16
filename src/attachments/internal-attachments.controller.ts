@@ -13,6 +13,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { InternalServiceGuard } from '../internal-services/guards/internal-service.guard';
@@ -30,6 +31,8 @@ import { MedicalRecordAttachmentModel } from './models/medical-record-attachment
  * Attachment endpoints for the clinic (vet) backend. The vet backend checks
  * the clinic user's access to the pet before calling these.
  */
+// Calls come from the vet backend's IP, authenticated by the shared secret.
+@SkipThrottle()
 @Controller('internal/medical-records')
 @UseGuards(InternalServiceGuard)
 export class InternalAttachmentsController {

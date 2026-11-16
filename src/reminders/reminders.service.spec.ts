@@ -1,4 +1,10 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Pet } from '../pets/schemas/pet.schema';
+import { ReminderManagedBy } from './enums/reminder-managed-by.enum';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Types } from 'mongoose';
@@ -43,6 +49,7 @@ describe('RemindersService', () => {
   const vaccinationModelMock = { exists: jest.fn() };
   const medicationModelMock = { exists: jest.fn() };
   const appointmentModelMock = { exists: jest.fn() };
+  const petModelMock = { exists: jest.fn() };
 
   const buildReminderDocument = (
     pet: string,
@@ -86,6 +93,10 @@ describe('RemindersService', () => {
         {
           provide: getModelToken(Appointment.name),
           useValue: appointmentModelMock,
+        },
+        {
+          provide: getModelToken(Pet.name),
+          useValue: petModelMock,
         },
       ],
     }).compile();
@@ -375,6 +386,129 @@ describe('RemindersService', () => {
         true,
       );
       expect(document.deleteOne).toHaveBeenCalled();
+    });
+  });
+  describe('reminders from clinics', () => {
+    const clinicReminder = (overrides: Record<string, unknown> = {}) => ({
+      ...buildReminderDocument(petId),
+      clinicId: 'clinic-1',
+      clinicName: 'Paws',
+      createdByName: 'Dr Ona',
+      ...overrides,
+    });
+
+    it('marks who manages each reminder', async () => {
+      reminderModelMock.find.mockReturnValue({
+        sort: () => ({
+          exec: jest
+            .fn()
+            .mockResolvedValue([
+              buildReminderDocument(petId),
+              clinicReminder(),
+              { ...buildReminderDocument(petId), automatic: true },
+            ]),
+        }),
+      });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue(
+        undefined,
+      );
+
+      const reminders = await service.findRemindersForPet(ownerId, petId);
+
+      expect(reminders.map((reminder) => reminder.managedBy)).toEqual([
+        ReminderManagedBy.OWNER,
+        ReminderManagedBy.CLINIC,
+        ReminderManagedBy.AUTOMATIC,
+      ]);
+      expect(reminders[1]).toMatchObject({
+        clinicName: 'Paws',
+        createdByName: 'Dr Ona',
+      });
+    });
+
+    it('does not let the owner edit or delete a clinic reminder', async () => {
+      const document = clinicReminder();
+      reminderModelMock.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(document),
+      });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue(
+        undefined,
+      );
+
+      await expect(
+        service.updateReminder(ownerId, reminderId, { title: 'Changed' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.deleteReminder(ownerId, reminderId),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(document.save).not.toHaveBeenCalled();
+      expect(document.deleteOne).not.toHaveBeenCalled();
+    });
+
+    it('lets the owner complete a clinic reminder', async () => {
+      const document = clinicReminder();
+      reminderModelMock.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(document),
+      });
+      petOwnershipServiceMock.assertPetBelongsToOwner.mockResolvedValue(
+        undefined,
+      );
+
+      const result = await service.completeReminder(ownerId, reminderId);
+
+      expect(result.status).toBe(ReminderStatus.COMPLETED);
+    });
+
+    it('creates a reminder for an active pet on behalf of a clinic', async () => {
+      petModelMock.exists.mockReturnValue(existsResult({ _id: petId }));
+      reminderModelMock.create.mockResolvedValue(clinicReminder());
+
+      const result = await service.createForClinic({
+        petId,
+        type: ReminderType.APPOINTMENT,
+        title: 'Follow-up visit',
+        dueAt,
+        clinicId: 'clinic-1',
+        clinicName: 'Paws',
+        createdByName: 'Dr Ona',
+      });
+
+      expect(reminderModelMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          petId: new Types.ObjectId(petId),
+          clinicId: 'clinic-1',
+          status: ReminderStatus.PENDING,
+        }),
+      );
+      expect(result.managedBy).toBe(ReminderManagedBy.CLINIC);
+    });
+
+    it('only lets the clinic that set a reminder remove it', async () => {
+      const document = clinicReminder();
+      reminderModelMock.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(document),
+      });
+
+      await expect(
+        service.deleteForClinic(reminderId, 'clinic-2'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(document.deleteOne).not.toHaveBeenCalled();
+
+      await service.deleteForClinic(reminderId, 'clinic-1');
+      expect(document.deleteOne).toHaveBeenCalled();
+    });
+
+    it('shows clinics only clinic and automatic reminders', async () => {
+      reminderModelMock.find.mockReturnValue({
+        sort: () => ({ exec: jest.fn().mockResolvedValue([]) }),
+      });
+
+      await service.findClinicVisibleForPet(petId);
+
+      expect(reminderModelMock.find).toHaveBeenCalledWith({
+        petId: new Types.ObjectId(petId),
+        $or: [{ clinicId: { $exists: true, $ne: null } }, { automatic: true }],
+      });
     });
   });
 });

@@ -9,11 +9,13 @@ import {
   MedicationSchema,
 } from '../medications/schemas/medication.schema';
 import { PetsModule } from '../pets/pets.module';
+import { Pet, PetSchema } from '../pets/schemas/pet.schema';
 import {
   Vaccination,
   VaccinationSchema,
 } from '../vaccinations/schemas/vaccination.schema';
 import { Reminder, ReminderSchema } from './schemas/reminder.schema';
+import { InternalRemindersResolver } from './internal-reminders.resolver';
 import { RemindersResolver } from './reminders.resolver';
 import { RemindersService } from './reminders.service';
 
@@ -25,9 +27,10 @@ import { RemindersService } from './reminders.service';
       { name: Vaccination.name, schema: VaccinationSchema },
       { name: Medication.name, schema: MedicationSchema },
       { name: Appointment.name, schema: AppointmentSchema },
+      { name: Pet.name, schema: PetSchema },
     ]),
   ],
-  providers: [RemindersService, RemindersResolver],
+  providers: [RemindersService, RemindersResolver, InternalRemindersResolver],
   exports: [RemindersService],
 })
 export class RemindersModule {}

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -17,6 +18,7 @@ import {
   MedicationDocument,
 } from '../medications/schemas/medication.schema';
 import { PetOwnershipService } from '../pets/pet-ownership.service';
+import { Pet, PetDocument } from '../pets/schemas/pet.schema';
 import {
   Vaccination,
   VaccinationDocument,
@@ -24,9 +26,37 @@ import {
 import { SourceType } from './enums/source-type.enum';
 import { CreateReminderInput } from './dto/create-reminder.input';
 import { UpdateReminderInput } from './dto/update-reminder.input';
+import { ReminderManagedBy } from './enums/reminder-managed-by.enum';
 import { ReminderStatus } from './enums/reminder-status.enum';
+import { ReminderType } from './enums/reminder-type.enum';
 import { ReminderModel } from './models/reminder.model';
 import { Reminder, ReminderDocument } from './schemas/reminder.schema';
+
+export const MANAGED_REMINDER_MESSAGE =
+  'This reminder comes from your veterinary clinic. You can mark it done or dismiss it.';
+export const OTHER_CLINIC_REMINDER_MESSAGE =
+  'Only the clinic that set this reminder can remove it.';
+
+export type ClinicReminderInput = {
+  petId: string;
+  type: ReminderType;
+  title: string;
+  message?: string;
+  dueAt: Date;
+  clinicId: string;
+  clinicName: string;
+  createdByName?: string;
+};
+
+export function reminderManagedBy(reminder: {
+  automatic?: boolean;
+  clinicId?: string;
+}): ReminderManagedBy {
+  if (reminder.automatic) {
+    return ReminderManagedBy.AUTOMATIC;
+  }
+  return reminder.clinicId ? ReminderManagedBy.CLINIC : ReminderManagedBy.OWNER;
+}
 
 @Injectable()
 export class RemindersService {
@@ -40,6 +70,8 @@ export class RemindersService {
     private readonly medicationModel: Model<MedicationDocument>,
     @InjectModel(Appointment.name)
     private readonly appointmentModel: Model<AppointmentDocument>,
+    @InjectModel(Pet.name)
+    private readonly petModel: Model<PetDocument>,
   ) {}
 
   async createReminder(
@@ -116,6 +148,7 @@ export class RemindersService {
     this.assertImmutableFieldsNotChanged(input);
     const dto = await this.validateUpdateInput(input);
     const reminder = await this.findOwnedReminderDocument(ownerId, reminderId);
+    this.assertOwnerManaged(reminder);
 
     if (dto.type !== undefined) {
       reminder.type = dto.type;
@@ -165,8 +198,82 @@ export class RemindersService {
 
   async deleteReminder(ownerId: string, reminderId: string): Promise<boolean> {
     const reminder = await this.findOwnedReminderDocument(ownerId, reminderId);
+    this.assertOwnerManaged(reminder);
     await reminder.deleteOne();
     return true;
+  }
+
+  /**
+   * Reminders a clinic may see for a patient: the ones clinics set and the
+   * automatic ones from clinic records — never the owner's personal ones.
+   */
+  async findClinicVisibleForPet(petId: string): Promise<ReminderModel[]> {
+    if (!isValidObjectId(petId)) {
+      throw new NotFoundException('Pet not found');
+    }
+    const reminders = await this.reminderModel
+      .find({
+        petId: new Types.ObjectId(petId),
+        $or: [{ clinicId: { $exists: true, $ne: null } }, { automatic: true }],
+      })
+      .sort({ dueAt: 1 })
+      .exec();
+    return reminders.map((reminder) => this.toReminderModel(reminder));
+  }
+
+  async createForClinic(input: ClinicReminderInput): Promise<ReminderModel> {
+    this.assertValidDate(input.dueAt, 'dueAt');
+    await this.assertActivePet(input.petId);
+    const created = await this.reminderModel.create({
+      petId: new Types.ObjectId(input.petId),
+      type: input.type,
+      title: input.title,
+      message: input.message,
+      dueAt: input.dueAt,
+      status: ReminderStatus.PENDING,
+      clinicId: input.clinicId,
+      clinicName: input.clinicName,
+      createdByName: input.createdByName,
+    });
+    return this.toReminderModel(created);
+  }
+
+  /** Removes a reminder the given clinic set; returns what was removed. */
+  async deleteForClinic(
+    reminderId: string,
+    clinicId: string,
+  ): Promise<ReminderModel> {
+    if (!isValidObjectId(reminderId)) {
+      throw new NotFoundException('Reminder not found');
+    }
+    const reminder = await this.reminderModel.findById(reminderId).exec();
+    if (!reminder) {
+      throw new NotFoundException('Reminder not found');
+    }
+    if (reminder.clinicId !== clinicId) {
+      throw new ForbiddenException(OTHER_CLINIC_REMINDER_MESSAGE);
+    }
+    const model = this.toReminderModel(reminder);
+    await reminder.deleteOne();
+    return model;
+  }
+
+  private assertOwnerManaged(reminder: ReminderDocument): void {
+    if (reminderManagedBy(reminder) !== ReminderManagedBy.OWNER) {
+      throw new ForbiddenException(MANAGED_REMINDER_MESSAGE);
+    }
+  }
+
+  private async assertActivePet(petId: string): Promise<void> {
+    if (!isValidObjectId(petId)) {
+      throw new NotFoundException('Pet not found');
+    }
+    const exists = await this.petModel
+      .exists({ _id: new Types.ObjectId(petId), deletedAt: null })
+      .exec();
+    if (!exists) {
+      throw new NotFoundException('Pet not found');
+    }
   }
 
   private async findOwnedReminderDocument(
@@ -312,6 +419,10 @@ export class RemindersService {
       status: document.status,
       sourceType: document.sourceType,
       sourceId: document.sourceId?.toString(),
+      managedBy: reminderManagedBy(document),
+      clinicId: document.clinicId,
+      clinicName: document.clinicName,
+      createdByName: document.createdByName,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
     };
