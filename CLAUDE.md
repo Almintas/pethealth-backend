@@ -43,30 +43,38 @@ The owner is Lithuanian and talks in Lithuanian — answer in Lithuanian.
   PDF writer with an embedded DejaVu Sans subset (Lithuanian letters render everywhere). Characters outside
   the subset lose accents or become "?"; to add characters edit `scripts/generate-pdf-fonts.py` and rerun it.
   No backend endpoint; it uses the existing GraphQL queries and frontend translations.
+- Attachments on medical records: bytes in MongoDB GridFS of the owner DB (bucket `medical_attachment_files`,
+  metadata in `medical_record_attachments`, behind the `ATTACHMENT_STORAGE` interface in `src/attachments`).
+  PDF/JPG/PNG/WebP detected from bytes, 10 MB, 20 per record. Clinics use vet REST
+  `/medical-records/:recordId/attachments[/:id]` (upload needs `clinicId`; only the uploading clinic may delete);
+  the vet backend proxies to owner internal REST `/internal/medical-records/...` (service secret, base derived from
+  OWNER_GRAPHQL_URL). Owners download via owner REST `/medical-records/:recordId/attachments/:id` (JWT) and see
+  `attachments` on records. Multer reads file names as latin1 — both backends decode them back to UTF-8.
+  Audit: CREATED/DELETED + ATTACHMENT. Files go with record/pet/account deletion; export lists them.
 
 ## Tests and CI (all must stay green)
 
 - Each repo: unit tests + lint + build in GitHub Actions.
 - Owner backend: `Integration (owner + clinic API)` workflow runs both backends + mongo:7 (`test/integration/full-flow.mjs` in vet-backend).
 - E2E (Playwright 1.56.1, ubuntu-24.04, own `e2e/package.json`) runs all four apps; workflow in owner frontend and vet frontend.
-  13 serial steps: vet register/approve → clinic → owner + pet → share code → claim → reuse rejected →
-  vaccination → owner sees it + activity log → owner downloads health passport PDF → receptionist invite →
-  revoke → owner export + delete account → vet 2FA.
+  15 serial steps: vet register/approve → clinic → owner + pet → share code → claim → reuse rejected →
+  vaccination → vet attaches lab result to a record → owner sees it + activity log → owner downloads health
+  passport PDF → owner downloads the attachment → receptionist invite → revoke → owner export + delete account → vet 2FA.
+- The integration test (`full-flow.mjs`) also uploads an attachment via the vet API and checks the owner download.
 - No local node_modules/network in the Claude workspace: verify via CI (`gh run list -R Almintas/<repo> -b dev`).
   Don't run global prettier on whole folders — it doesn't pick up repo style; edit narrowly.
 
 ## Status (2026-11-16)
 
 Done: core owner/clinic flows, consent codes, audit log, clinic team + invites, admin approval,
-browser E2E, rate limits, admin audit, 2FA, GDPR data export + account deletion (on `main`),
-pet health passport PDF (on `dev`; ask before merging to `main`).
+browser E2E, rate limits, admin audit, 2FA, GDPR data export + account deletion, pet health passport PDF
+(all on `main`), attachments on medical records (on `dev`; ask before merging to `main`).
 
 ## Next, in order
 
-1. Attachments on records (lab results, X-rays).
-2. Owner sees clinic appointments and reminders.
-3. Microchip search for clinics.
-4. Sentry preparation (both backends + frontends).
+1. Owner sees clinic appointments and reminders.
+2. Microchip search for clinics.
+3. Sentry preparation (both backends + frontends).
 
 ## Production notes for the owner
 
@@ -74,3 +82,5 @@ pet health passport PDF (on `dev`; ask before merging to `main`).
 - Set TWO_FACTOR_ENCRYPTION_KEY on the vet backend before anyone enables 2FA, and never change it.
 - VET_FRONTEND_URL must be a full https URL. RESEND_* is optional (email).
 - Railway sleepApplication=true causes cold starts.
+- Attachments make the owner MongoDB grow by the file sizes; watch its storage on Railway. Swapping to object
+  storage later means a new `AttachmentStorage` implementation plus copying existing GridFS files.
