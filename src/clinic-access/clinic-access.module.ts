@@ -31,5 +31,6 @@ import { VetBackendClient } from './vet-backend.client';
     InternalServiceGuard,
     VetBackendClient,
   ],
+  exports: [VetBackendClient],
 })
 export class ClinicAccessModule {}
